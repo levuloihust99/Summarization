@@ -47,7 +47,9 @@ class CorpusDataset(IterableDataset):
     def __iter__(self):
         with open(self.data_path, "r") as reader:
             for line in reader:
-                yield json.loads(line.strip())['sentence']
+                sentence = json.loads(line.strip())['sentence']
+                if sentence:
+                    yield sentence
 
 
 class Seq2SeqDataset(IterableDataset):
