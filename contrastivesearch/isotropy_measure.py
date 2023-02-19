@@ -194,7 +194,8 @@ def get_seq2seq_collate_fn(tokenizer, model, max_len=1024):
             documents.append(item['in'])
             summaries.append(item['out'])
         document_inputs = tokenizer(documents, max_length=max_len - 1, padding=True, truncation=True, return_tensors='pt')
-        summary_inputs = tokenizer(summaries, padding=True, return_tensors='pt', add_special_tokens=False)
+        summary_inputs = tokenizer(summaries, padding=True,
+            return_tensors='pt', max_length=max_len - 1, truncation=True, add_special_tokens=False)
         decoder_start_token_id = model.config.decoder_start_token_id
 
         shifted_summary_input_ids = prepend(summary_inputs.input_ids, decoder_start_token_id)
