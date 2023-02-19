@@ -96,7 +96,9 @@ class VimsDataset(IterableDataset):
             prefix = stack.pop()
             if os.path.isfile(prefix):
                 with open(prefix) as reader:
-                    yield self._get_item(reader.read())
+                    item = self._get_item(reader.read())
+                    if item:
+                        yield item
             if not os.path.isdir(prefix):
                 continue
             paths = os.listdir(prefix)
@@ -110,7 +112,9 @@ class VimsDataset(IterableDataset):
 
     def _get_item(self, content):
         match = re.search(r"Summary: (.*?)\nContent:\n(.*)", content, re.DOTALL)
-        return {'in': match.group(2).strip(), 'out': match.group(1).strip()}
+        if match:
+            return {'in': match.group(2).strip(), 'out': match.group(1).strip()}
+        return None
 
 
 class VietnewsDataset(Dataset):
@@ -377,6 +381,12 @@ def main():
                     writer.write("Decoder isotropy of '{}' = {}\n".format(args.model_path, dec_measurer.isotropy))
                     assert enc_measurer.counter == dec_measurer.counter
                     writer.write("Calculated on #{} sentences.".format(enc_measurer.counter))
+
+        with open(args.output_path, "w") as writer:
+            writer.write("Encoder isotropy of '{}' = {}\n".format(args.model_path, enc_measurer.isotropy))
+            writer.write("Decoder isotropy of '{}' = {}\n".format(args.model_path, dec_measurer.isotropy))
+            assert enc_measurer.counter == dec_measurer.counter
+            writer.write("Calculated on #{} sentences.".format(enc_measurer.counter))
     else:
         calculate_isotropy(model, tokenizer, args)
 
