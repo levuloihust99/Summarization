@@ -171,7 +171,7 @@ def prepend(tensor: torch.Tensor, prepend_id: int):
 
 def get_enc_collate_fn(tokenizer, max_len=1024):
     def collate_fn(items: List[Text]):
-        batch = tokenizer(items, return_tensors='pt', padding=True)
+        batch = tokenizer(items, return_tensors='pt', padding=True, max_length=max_len, truncation=True)
         return batch
     return collate_fn
 
@@ -360,12 +360,16 @@ def main():
     model.to(device)
 
     if args.model_type == "separate-enc-dec":
+        if args.max_len:
+            collate_fn = get_enc_collate_fn(tokenizer, args.max_len)
+        else:
+            collate_fn = get_enc_collate_fn(tokenizer)
         dataset = CorpusDataset(args.data_path)
         dataloader = DataLoader(
             dataset=dataset,
             batch_size=args.batch_size,
             shuffle=False,
-            collate_fn=get_enc_collate_fn(tokenizer),
+            collate_fn=collate_fn,
             drop_last=False
         )
         enc_measurer = IsotropyMeasurer()
