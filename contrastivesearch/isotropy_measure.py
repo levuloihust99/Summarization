@@ -354,7 +354,7 @@ def main():
 
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
     if not tokenizer.pad_token:
-        tokenizer.add_special_tokens({'pad_token': tokenizer.eos_token})
+        tokenizer.add_special_tokens({'pad_token': tokenizer.convert_ids_to_tokens([0])[0]})
     model = AutoModel.from_pretrained(args.model_path)
     global device
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device("cpu")
