@@ -8,8 +8,9 @@ from typing import Text, List, Any, Dict
 import torch
 from torch import nn
 from torch.utils.data import Dataset, IterableDataset, DataLoader
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer, AutoModel, LEDForConditionalGeneration
 from transformers.modeling_outputs import Seq2SeqModelOutput
+from transformers.models.led.modeling_led import LEDSeq2SeqLMOutput
 
 
 class Reporter(object):
@@ -229,6 +230,8 @@ class IsotropyMeasurer(object):
             outputs = model(**batch, output_hidden_states=True, return_dict=True)
             if isinstance(outputs, Seq2SeqModelOutput):
                 sequence_output = outputs.decoder_hidden_states[-1] # [bsz, seq_len, hidden_size]
+            elif isinstance(outputs, LEDSeq2SeqLMOutput):
+                sequence_output = outputs.decoder_hidden_states[-1]
             else:
                 sequence_output = outputs.last_hidden_state
         
@@ -355,7 +358,10 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
     if not tokenizer.pad_token:
         tokenizer.add_special_tokens({'pad_token': tokenizer.convert_ids_to_tokens([0])[0]})
-    model = AutoModel.from_pretrained(args.model_path)
+    if "primera" in args.model_path.lower():
+        model = LEDForConditionalGeneration.from_pretrained(args.model_path)
+    else:
+        model = AutoModel.from_pretrained(args.model_path)
     global device
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device("cpu")
     model.to(device)
