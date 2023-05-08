@@ -5,3 +5,9 @@ data/
 notebooks/
 stats/
 scripts/
+compare-mt/
+summarize-from-feedback/
+wandb/
+logs/
+model_generation.bin
+outputs/
