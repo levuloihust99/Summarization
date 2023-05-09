@@ -4,7 +4,7 @@ import shutil
 import logging
 import argparse
 from tqdm import tqdm
-from typing import List, Dict, Text, Any
+from typing import List, Dict, Text
 
 from torch.utils.data import DataLoader
 from transformers import BertTokenizer
@@ -147,7 +147,7 @@ def main():
         )
 
     generation_kwargs = {
-        "min_length": -1,
+        "min_length": 4,
         "top_k": 0.0,
         "top_p": 1.0,
         "do_sample": True,
@@ -170,16 +170,19 @@ def main():
     best_rouge1_f1 = float("-inf")
     best_checkpoint = None
     for step, batch in enumerate(tqdm(dataloader)):
-        documents = batch["document"]
         summaries = batch["summary"]
         query_tensors = batch["input_ids"]
         query_tensors = [q.to(device) for q in query_tensors]
         response_tensors = []
         rewards = []
+        ignored_idxs = set() # PPO raise ValueError when repsonse tensor is less then 4 tokens
         for i, query in enumerate(query_tensors):
             # calculate response tensor
             response = ppo_trainer.generate(query, **generation_kwargs)
             response = response.squeeze()
+            if len(response) < 4:
+                ignored_idxs.add(i)
+                continue
             response_tensors.append(response)
             response_text = tokenizer.decode(
                 response, clean_up_tokenization_spaces=False, skip_special_tokens=True)
@@ -191,6 +194,10 @@ def main():
             metric = _rouge_n_sentence_level(response_tokens, summary_tokens, 1)
             reward = metric.to_score(alpha=0.5)["f"] * 10
             rewards.append(torch.tensor(reward).to(device))
+        # filter query_tensors
+        query_tensors = [query_tensors[i] for i in range(len(query_tensors)) if i not in ignored_idxs]
+        if not query_tensors:
+            continue
 
         # PPO step
         train_stats = ppo_trainer.step(query_tensors, response_tensors, rewards)

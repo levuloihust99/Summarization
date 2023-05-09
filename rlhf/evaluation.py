@@ -64,6 +64,10 @@ def evaluate_generator(
     avg_rouge2_f = _f_score(avg_rouge2_p, avg_rouge2_r, alpha=0.5)
 
     return {
+        "eval/rouge1-precision": avg_rouge1_p,
+        "eval/rouge1-recall": avg_rouge1_r,
         "eval/rouge1-f1": avg_rouge1_f,
+        "eval/rouge2-precision": avg_rouge2_p,
+        "eval/rouge2-recall": avg_rouge2_r,
         "eval/rouge2-f1": avg_rouge2_f
     }
