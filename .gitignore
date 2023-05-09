@@ -11,3 +11,4 @@ wandb/
 logs/
 model_generation.bin
 outputs/
+**.ipynb_checkpoints/
