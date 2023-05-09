@@ -13,6 +13,7 @@ def evaluate_generator(
     model,
     dataloader,
     tokenizer,
+    device,
     generation_kwargs
 ):
     rouge_scorer = RougeScorer(['rouge1', 'rouge2'], use_stemmer=True)
@@ -23,7 +24,7 @@ def evaluate_generator(
     with torch.no_grad():
         for idx, batch in enumerate(tqdm(dataloader)):
             input_ids = batch["input_ids"]
-            input_ids = torch.stack(input_ids, dim=0)
+            input_ids = torch.stack(input_ids, dim=0).to(device)
             output = model.generate(input_ids=input_ids, **generation_kwargs)
             batch_hyps = [
                 tokenizer.decode(output_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)

@@ -110,6 +110,7 @@ def main():
 
     # initialize trainer
     ppo_config = PPOConfig(
+        learning_rate=args.learning_rate,
         batch_size=args.batch_size,
         log_with="tensorboard",
         accelerator_kwargs={
@@ -117,13 +118,14 @@ def main():
         }
     )
     ppo_trainer = PPOTrainer(ppo_config, policy, sft_model, tokenizer)
+    device = ppo_trainer.accelerator.device
     
     # data loader
     dataset = ByteDataset(data_path=args.data_path, idx_record_size=6)
     dataloader = DataLoader(
         dataset,
         batch_size=args.batch_size,
-        shuffle=False,
+        shuffle=True,
         collate_fn=get_data_collator(
             tokenizer,
             max_input_len=data_specific_args.total_len,
@@ -160,6 +162,7 @@ def main():
             ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).pretrained_model,
             valid_dataloader,
             tokenizer,
+            device,
             generation_kwargs
         )
         ppo_trainer.accelerator.log(valid_stats, step=0)
@@ -170,6 +173,7 @@ def main():
         documents = batch["document"]
         summaries = batch["summary"]
         query_tensors = batch["input_ids"]
+        query_tensors = [q.to(device) for q in query_tensors]
         response_tensors = []
         rewards = []
         for i, query in enumerate(query_tensors):
@@ -186,7 +190,7 @@ def main():
             summary_tokens = basic_tokenizer.tokenize(summary)
             metric = _rouge_n_sentence_level(response_tokens, summary_tokens, 1)
             reward = metric.to_score(alpha=0.5)["f"] * 10
-            rewards.append(torch.tensor(reward))
+            rewards.append(torch.tensor(reward).to(device))
 
         # PPO step
         train_stats = ppo_trainer.step(query_tensors, response_tensors, rewards)
@@ -199,6 +203,7 @@ def main():
                 ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).pretrained_model,
                 valid_dataloader,
                 tokenizer,
+                device,
                 generation_kwargs
             )
             ppo_trainer.accelerator.log(valid_stats, step=step + 1)
@@ -213,6 +218,7 @@ def main():
                 if rouge1_f1 > best_rouge1_f1:
                     best_rouge1_f1 = rouge1_f1
                     best_checkpoint = cp_name
+                    logger.info("New best checkpoint: '{}'".format(cp_name))
                 ppo_trainer.tokenizer.save_pretrained(cp_path)
                 ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).save_pretrained(cp_path)
 

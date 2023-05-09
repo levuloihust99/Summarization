@@ -9,6 +9,7 @@ def add_training_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("--logging_dir", default="logs")
     parser.add_argument("--keep_checkpoint_max", type=int, default=3)
     parser.add_argument("--eval_on_first_step", action="store_true", default=False)
+    parser.add_argument("--learning_rate", type=float, default=1e-5)
 
 
 def add_tokenizer_arguments(parser: argparse.ArgumentParser):
