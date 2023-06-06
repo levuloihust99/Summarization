@@ -58,7 +58,7 @@ def get_collate_fn(
 
             if len(input_ids) > max_input_len:
                 input_ids = input_ids[:max_input_len]
-                input_ids[-1] = tokenizer.eos_token
+                input_ids[-1] = tokenizer.eos_token_id
             if len(output_ids) > max_output_len:
                 output_ids = output_ids[:max_output_len]
 
