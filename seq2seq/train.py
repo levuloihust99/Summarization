@@ -36,44 +36,54 @@ def calculate_rouge_score(ref: Text, pred: Text, ns: List[int] = [1]):
     return score
 
 
-def get_compute_metrics(tokenizer):
+def get_compute_metrics(tokenizer, predict_with_generate: bool):
     def compute_metrics(eval_preds):
         logits, labels = eval_preds
         labels[labels == -100] = tokenizer.pad_token_id
         preds = logits.argmax(axis=-1)
-        
-        references = []
-        references = [
-            tokenizer.decode(tokens, clean_up_tokenization_spaces=False, skip_special_tokens=True)
-            for tokens in labels
-        ]
-        predictions = [
-            tokenizer.decode(tokens, clean_up_tokenization_spaces=False, skip_special_tokens=True)
-            for tokens in preds
-        ]
 
-        scores = []
-        for ref, pred in zip(references, predictions):
-            score = calculate_rouge_score(pred, ref, [1, 2])
-            scores.append(score)
-        
-        r1_precisions = []
-        r1_recalls = []
-        r2_precisions = []
-        r2_recalls = []
+        if predict_with_generate:
+            references = []
+            references = [
+                tokenizer.decode(tokens, clean_up_tokenization_spaces=False, skip_special_tokens=True)
+                for tokens in labels
+            ]
+            predictions = [
+                tokenizer.decode(tokens, clean_up_tokenization_spaces=False, skip_special_tokens=True)
+                for tokens in preds
+            ]
 
-        for score in scores:
-            r1_precisions.append(score[1]["p"])
-            r1_recalls.append(score[1]["r"])
-            r2_precisions.append(score[2]["p"])
-            r2_recalls.append(score[2]["r"])
-        
-        r1_p = sum(r1_precisions) / len(r1_precisions)
-        r1_r = sum(r1_recalls) / len(r1_recalls)
-        r1_f1 = _f_score(r1_p, r1_r, alpha=0.5)
-        r2_p = sum(r2_precisions) / len(r2_precisions)
-        r2_r = sum(r2_recalls) / len(r2_recalls)
-        r2_f1 = _f_score(r2_p, r2_r, alpha=0.5)
+            scores = []
+            for ref, pred in zip(references, predictions):
+                score = calculate_rouge_score(pred, ref, [1, 2])
+                scores.append(score)
+            
+            r1_precisions = []
+            r1_recalls = []
+            r2_precisions = []
+            r2_recalls = []
+
+            for score in scores:
+                r1_precisions.append(score[1]["p"])
+                r1_recalls.append(score[1]["r"])
+                r2_precisions.append(score[2]["p"])
+                r2_recalls.append(score[2]["r"])
+            
+            r1_p = sum(r1_precisions) / len(r1_precisions)
+            r1_r = sum(r1_recalls) / len(r1_recalls)
+            r1_f1 = _f_score(r1_p, r1_r, alpha=0.5)
+            r2_p = sum(r2_precisions) / len(r2_precisions)
+            r2_r = sum(r2_recalls) / len(r2_recalls)
+            r2_f1 = _f_score(r2_p, r2_r, alpha=0.5)
+
+            return {
+                "rouge-1-p": r1_p,
+                "rouge-1-r": r1_r,
+                "rouge-1-f1": r1_f1,
+                "rouge-2-p": r2_p,
+                "rouge-2-r": r2_r,
+                "rouge-2-f1": r2_f1
+            }
 
         active_mask = (labels != tokenizer.pad_token_id)
         num_active_tokens = active_mask.sum()
@@ -96,13 +106,7 @@ def get_compute_metrics(tokenizer):
 
         return {
             "acc": float(acc),
-            "ppl": float(ppl),
-            "rouge-1-p": r1_p,
-            "rouge-1-r": r1_r,
-            "rouge-1-f1": r1_f1,
-            "rouge-2-p": r2_p,
-            "rouge-2-r": r2_r,
-            "rouge-2-f1": r2_f1
+            "ppl": float(ppl)
         }
     return compute_metrics
 
@@ -184,7 +188,7 @@ def main():
 
     # Trainer: trainer takes care of switching between train/eval mode
     # no need to do model.train() or model.eval() manually
-    compute_metrics = get_compute_metrics(tokenizer)
+    compute_metrics = get_compute_metrics(tokenizer, cfg.predict_with_generate)
     trainer = Seq2SeqTrainer(
         model=model,
         args=training_args,
