@@ -1,4 +1,6 @@
 import re
+import os
+import json
 import string
 import torch
 import numpy as np
@@ -115,6 +117,11 @@ def main():
     parser = create_parser()
     args = parser.parse_args()
     cfg = get_config(default_config, args)
+
+    if not os.path.exists(cfg.output_dir):
+        os.makedirs(cfg.output_dir)
+    with open(os.path.join(cfg.output_dir, "training_config.json"), "w") as writer:
+        json.dump(cfg.to_json(), writer, indent=4, ensure_ascii=False)
 
     normalizer = NFKCNormalizer()
     tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path)
