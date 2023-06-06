@@ -6,9 +6,16 @@ from torch.utils.data import DataLoader
 from libs.data_helpers.bytedataset import ByteDataset
 
 
+def get_labels(decoder_input_ids):
+    out_decoder_input_ids = decoder_input_ids[:-1]
+    labels = decoder_input_ids[1:]
+    return out_decoder_input_ids, labels
+
+
 def get_collate_fn(
     tokenizer,
     normalizer,
+    decoder_start_token_id,
     input_transform: Optional[Callable] = None,
     output_transform: Optional[Callable] = None,
     max_input_len: int = None,
@@ -42,25 +49,20 @@ def get_collate_fn(
         nonlocal max_input_len, max_output_len
         if max_input_len is None:
             max_input_len = float("inf")
-        else:
-            max_input_len = max_input_len
         if max_output_len is None:
             max_output_len = float("inf")
-        else:
-            max_output_len = max_input_len
 
         for item in items:
             input_ids = tokenizer.encode(normalizer(item[input_name]))
             output_ids = tokenizer.encode(normalizer(item[output_name]))
 
-            if len(input_ids) > max_input_len - 2:
-                input_ids = input_ids[:max_input_len - 2]
-            if len(output_ids) > max_output_len - 1:
-                output_ids = output_ids[:max_output_len - 1]
+            if len(input_ids) > max_input_len:
+                input_ids = input_ids[:max_input_len]
+                input_ids[-1] = tokenizer.eos_token
+            if len(output_ids) > max_output_len:
+                output_ids = output_ids[:max_output_len]
 
-            input_ids = [tokenizer.cls_token_id] + input_ids + [tokenizer.sep_token_id]
-            labels = output_ids + [tokenizer.eos_token_id]
-            output_ids = [tokenizer.bos_token_id] + output_ids
+            labels = [decoder_start_token_id] + output_ids[:-1]
 
             if batch_max_input_len < len(input_ids):
                 batch_max_input_len = len(input_ids)
