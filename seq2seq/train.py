@@ -20,15 +20,15 @@ from .dataloader import get_collate_fn
 from libs.utils.rouge_calculator import _rouge_n_sentence_level, _f_score
 
 
-def calculate_rouge_score(ref: Text, pred: Text, ns: List[int] = [1]):
-    ref = ref.lower()
+def calculate_rouge_score(pred: Text, ref: Text, ns: List[int] = [1]):
     pred = pred.lower()
+    ref = ref.lower()
 
     punc_patt = re.compile(f"[{re.escape(string.punctuation)}]")
-    ref = punc_patt.sub(" ", ref)
-    ref_tokens = ref.split()
     pred = punc_patt.sub(" ", pred)
     pred_tokens = pred.split()
+    ref = punc_patt.sub(" ", ref)
+    ref_tokens = ref.split()
     
     score = {}
     for n in ns:
@@ -38,11 +38,11 @@ def calculate_rouge_score(ref: Text, pred: Text, ns: List[int] = [1]):
 
 def get_compute_metrics(tokenizer, predict_with_generate: bool):
     def compute_metrics(eval_preds):
-        logits, labels = eval_preds
-        labels[labels == -100] = tokenizer.pad_token_id
-        preds = logits.argmax(axis=-1)
-
         if predict_with_generate:
+            preds, labels = eval_preds
+            preds[preds == -100] = tokenizer.pad_token_id
+            labels[labels == -100] = tokenizer.pad_token_id
+
             references = []
             references = [
                 tokenizer.decode(tokens, clean_up_tokenization_spaces=False, skip_special_tokens=True)
@@ -54,7 +54,7 @@ def get_compute_metrics(tokenizer, predict_with_generate: bool):
             ]
 
             scores = []
-            for ref, pred in zip(references, predictions):
+            for pred, ref in zip(predictions, references):
                 score = calculate_rouge_score(pred, ref, [1, 2])
                 scores.append(score)
             
@@ -85,7 +85,9 @@ def get_compute_metrics(tokenizer, predict_with_generate: bool):
                 "rouge-2-f1": r2_f1
             }
 
-        active_mask = (labels != tokenizer.pad_token_id)
+        # else, predict without generate
+        logits, labels = eval_preds
+        active_mask = (labels != -100)
         num_active_tokens = active_mask.sum()
         flatten_mask = active_mask.reshape(-1)
         bsz, seq_len = labels.shape
@@ -170,6 +172,7 @@ def main():
         save_total_limit=cfg.save_total_limit,
         fp16=cfg.fp16,
         gradient_accumulation_steps=cfg.gradient_accumulation_steps,
+        gradient_checkpointing=cfg.gradient_checkpointing,
         log_level=cfg.log_level,
         logging_steps=cfg.logging_steps,
         logging_first_step=cfg.logging_first_step,
@@ -186,8 +189,8 @@ def main():
         data_seed=cfg.data_seed
     )
 
-    # Trainer: trainer takes care of switching between train/eval mode
-    # no need to do model.train() or model.eval() manually
+    # Trainer: trainer takes care of switching between train/eval mode.
+    # No need to do model.train() or model.eval() manually
     compute_metrics = get_compute_metrics(tokenizer, cfg.predict_with_generate)
     trainer = Seq2SeqTrainer(
         model=model,

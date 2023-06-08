@@ -41,6 +41,7 @@ def create_parser():
     parser.add_argument("--label_smoothing_factor", type=float)
     parser.add_argument("--load_best_model_at_end", type=eval)
     parser.add_argument("--metric_for_best_model")
+    parser.add_argument("--greater_is_better", type=eval)
     parser.add_argument("--predict_with_generate", type=eval)
     parser.add_argument("--resume_from_checkpoint")
     parser.add_argument("--remove_unused_columns", type=eval)
