@@ -28,6 +28,7 @@ eval_steps = 100
 save_total_limit = 2
 fp16 = False
 gradient_accumulation_steps = 1
+gradient_checkpointing = False
 log_level = "info"
 logging_steps = 50
 logging_first_step = True
@@ -78,6 +79,7 @@ def to_json():
         "save_total_limit": save_total_limit,
         "fp16": fp16,
         "gradient_accumulation_steps": gradient_accumulation_steps,
+        "gradient_checkpointing": gradient_checkpointing,
         "log_level": log_level,
         "logging_steps": logging_steps,
         "logging_first_step": logging_first_step,

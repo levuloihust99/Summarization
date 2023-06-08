@@ -34,6 +34,7 @@ def create_parser():
     parser.add_argument("--save_total_limit", type=int)
     parser.add_argument("--fp16", type=eval)
     parser.add_argument("--gradient_accumulation_steps", type=int)
+    parser.add_argument("--gradient_checkpointing", type=eval)
     parser.add_argument("--log_level")
     parser.add_argument("--logging_steps", type=int)
     parser.add_argument("--logging_first_step", type=eval)
