@@ -62,7 +62,8 @@ def get_collate_fn(
             if len(output_ids) > max_output_len:
                 output_ids = output_ids[:max_output_len]
 
-            labels = [decoder_start_token_id] + output_ids[:-1]
+            labels = output_ids
+            output_ids = [decoder_start_token_id] + output_ids[:-1]
 
             if batch_max_input_len < len(input_ids):
                 batch_max_input_len = len(input_ids)
