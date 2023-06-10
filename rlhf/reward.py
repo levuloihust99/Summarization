@@ -50,7 +50,7 @@ class SentenceEmbeddingSimilarityReward(object):
         return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
     
     def cal_reward(self, hyp: Text, ref: Text):
-        inputs = self.tokenizer([hyp, ref], padding=True, return_tensors="pt")
+        inputs = self.tokenizer([hyp, ref], padding=True, return_tensors="pt", truncation=True, max_length=512)
         input_ids = inputs.input_ids
         attention_mask = inputs.attention_mask
         with torch.no_grad():
