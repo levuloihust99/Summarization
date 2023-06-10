@@ -201,84 +201,87 @@ def main():
 
     best_metric = float("-inf")
     best_checkpoint = None
-    for step, batch in enumerate(tqdm(dataloader)):
-        summaries = batch[args.input_name]
-        query_tensors = batch["input_ids"]
-        query_tensors = [q.to(device) for q in query_tensors]
-        response_tensors = []
-        rewards = []
-        ignored_idxs = set() # PPO raise ValueError when repsonse tensor is less then 4 tokens
-        for i, query in enumerate(query_tensors):
-            # calculate response tensor
-            response = ppo_trainer.generate(query, **generation_kwargs)
-            response = response.squeeze()
-            if len(response) < 4:
-                ignored_idxs.add(i)
+    global_step = 0
+    for epoch in range(args.num_train_epochs):
+        for step, batch in enumerate(tqdm(dataloader)):
+            summaries = batch[args.input_name]
+            query_tensors = batch["input_ids"]
+            query_tensors = [q.to(device) for q in query_tensors]
+            response_tensors = []
+            rewards = []
+            ignored_idxs = set() # PPO raise ValueError when repsonse tensor is less then 4 tokens
+            for i, query in enumerate(query_tensors):
+                # calculate response tensor
+                response = ppo_trainer.generate(query, **generation_kwargs)
+                response = response.squeeze()
+                if len(response) < 4:
+                    ignored_idxs.add(i)
+                    continue
+                response_tensors.append(response)
+                response_text = tokenizer.decode(
+                    response, clean_up_tokenization_spaces=False, skip_special_tokens=True)
+
+                # calculate reward
+                summary = summaries[i]
+                if args.baseline == "avg":
+                    avg_reward = reward_model.get_avg_reward()
+                else:
+                    avg_reward = 0
+                reward = reward_model.cal_reward(response_text, summary) - avg_reward
+                rewards.append(torch.tensor(reward).to(device))
+
+            # filter query_tensors
+            query_tensors = [query_tensors[i] for i in range(len(query_tensors)) if i not in ignored_idxs]
+            if not query_tensors:
                 continue
-            response_tensors.append(response)
-            response_text = tokenizer.decode(
-                response, clean_up_tokenization_spaces=False, skip_special_tokens=True)
 
-            # calculate reward
-            summary = summaries[i]
-            if args.baseline == "avg":
-                avg_reward = reward_model.get_avg_reward()
-            else:
-                avg_reward = 0
-            reward = reward_model.cal_reward(response_text, summary) - avg_reward
-            rewards.append(torch.tensor(reward).to(device))
+            # PPO step
+            train_stats = ppo_trainer.step(query_tensors, response_tensors, rewards)
+            ppo_trainer.log_stats(train_stats, batch, rewards)
 
-        # filter query_tensors
-        query_tensors = [query_tensors[i] for i in range(len(query_tensors)) if i not in ignored_idxs]
-        if not query_tensors:
-            continue
+            # Save model
+            if (global_step + 1) % args.save_steps == 0:
+                # evaluation
+                valid_stats = evaluate_generator(
+                    ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).pretrained_model,
+                    valid_dataloader,
+                    tokenizer,
+                    device,
+                    args.input_name,
+                    args.output_name,
+                    generation_kwargs
+                )
+                ppo_trainer.accelerator.log(valid_stats, step=global_step + 1)
 
-        # PPO step
-        train_stats = ppo_trainer.step(query_tensors, response_tensors, rewards)
-        ppo_trainer.log_stats(train_stats, batch, rewards)
+                # save checkpoint
+                if ppo_trainer.accelerator.is_main_process:
+                    cp_name = f"checkpoint-{global_step + 1}"
+                    cp_path = os.path.join(args.model_save_path, cp_name)
+                    if not os.path.exists(cp_path):
+                        os.makedirs(cp_path)
+                    metric = get_metric(valid_stats, args.metric_for_best_model)
+                    if not args.greater_is_better:
+                        metric = -metric
+                    if metric > best_metric:
+                        best_metric = metric
+                        best_checkpoint = cp_name
+                        logger.info("New best checkpoint: '{}'".format(cp_name))
+                    ppo_trainer.tokenizer.save_pretrained(cp_path)
+                    ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).save_pretrained(cp_path)
 
-        # Save model
-        if (step + 1) % args.save_steps == 0:
-            # evaluation
-            valid_stats = evaluate_generator(
-                ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).pretrained_model,
-                valid_dataloader,
-                tokenizer,
-                device,
-                args.input_name,
-                args.output_name,
-                generation_kwargs
-            )
-            ppo_trainer.accelerator.log(valid_stats, step=step + 1)
-
-            # save checkpoint
-            if ppo_trainer.accelerator.is_main_process:
-                cp_name = f"checkpoint-{step + 1}"
-                cp_path = os.path.join(args.model_save_path, cp_name)
-                if not os.path.exists(cp_path):
-                    os.makedirs(cp_path)
-                metric = get_metric(valid_stats, args.metric_for_best_model)
-                if not args.greater_is_better:
-                    metric = -metric
-                if metric > best_metric:
-                    best_metric = metric
-                    best_checkpoint = cp_name
-                    logger.info("New best checkpoint: '{}'".format(cp_name))
-                ppo_trainer.tokenizer.save_pretrained(cp_path)
-                ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).save_pretrained(cp_path)
-
-                # remove old checkpoints if neccessary
-                all_checkpoints = os.listdir(args.model_save_path)
-                all_checkpoints = [cp for cp in all_checkpoints if cp != best_checkpoint]
-                all_checkpoints = [os.path.join(args.model_save_path, cp) for cp in all_checkpoints]
-                all_checkpoints = sorted(all_checkpoints, key=lambda x: os.path.getctime(x), reverse=True)
-                all_checkpoints = [
-                    os.path.join(args.model_save_path, best_checkpoint)
-                ] + all_checkpoints
-                tobe_removed_checkpoints = all_checkpoints[args.keep_checkpoint_max:]
-                for cp in tobe_removed_checkpoints:
-                    logger.info("Deleting {} since maximum kept checkpoints is {}...".format(cp, args.keep_checkpoint_max))
-                    shutil.rmtree(cp)
+                    # remove old checkpoints if neccessary
+                    all_checkpoints = os.listdir(args.model_save_path)
+                    all_checkpoints = [cp for cp in all_checkpoints if cp != best_checkpoint]
+                    all_checkpoints = [os.path.join(args.model_save_path, cp) for cp in all_checkpoints]
+                    all_checkpoints = sorted(all_checkpoints, key=lambda x: os.path.getctime(x), reverse=True)
+                    all_checkpoints = [
+                        os.path.join(args.model_save_path, best_checkpoint)
+                    ] + all_checkpoints
+                    tobe_removed_checkpoints = all_checkpoints[args.keep_checkpoint_max:]
+                    for cp in tobe_removed_checkpoints:
+                        logger.info("Deleting {} since maximum kept checkpoints is {}...".format(cp, args.keep_checkpoint_max))
+                        shutil.rmtree(cp)
+            global_step += 1
 
 
 if __name__ == "__main__":
