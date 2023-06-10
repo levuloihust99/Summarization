@@ -202,8 +202,10 @@ def main():
     best_metric = float("-inf")
     best_checkpoint = None
     global_step = 0
+    total_steps = len(dataloader) * args.num_train_epochs
+    progress_bar = tqdm(desc="Step", total=total_steps)
     for epoch in range(args.num_train_epochs):
-        for step, batch in enumerate(tqdm(dataloader)):
+        for step, batch in enumerate(dataloader):
             summaries = batch[args.input_name]
             query_tensors = batch["input_ids"]
             query_tensors = [q.to(device) for q in query_tensors]
@@ -247,9 +249,9 @@ def main():
                     valid_dataloader,
                     tokenizer,
                     device,
-                    args.input_name,
-                    args.output_name,
-                    generation_kwargs
+                    generation_kwargs,
+                    input_name=args.input_name,
+                    output_name=args.output_name
                 )
                 ppo_trainer.accelerator.log(valid_stats, step=global_step + 1)
 
@@ -281,6 +283,7 @@ def main():
                     for cp in tobe_removed_checkpoints:
                         logger.info("Deleting {} since maximum kept checkpoints is {}...".format(cp, args.keep_checkpoint_max))
                         shutil.rmtree(cp)
+            progress_bar.update(1)
             global_step += 1
 
 
