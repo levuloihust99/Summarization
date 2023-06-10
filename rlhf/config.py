@@ -36,6 +36,7 @@ def cnndm_setting(args):
     args.eval_interval = getattr(args, "eval_interval", 1000)
     args.num_beams = getattr(args, "num_beams", 4)
 
+
 def xsum_setting(args):
     # default setting for xsum
     args.batch_size = getattr(args, 'batch_size', 2)
@@ -71,3 +72,8 @@ def xsum_setting(args):
     args.adding = getattr(args, "adding", 0)
     args.eval_interval = getattr(args, "eval_interval", 1000)
     args.num_beams = getattr(args, "num_beams", 8)
+
+
+def vietnews_setting(args):
+    args.max_len = getattr(args, "max_len", 200)
+    args.total_len = getattr(args, "total_len", None)

@@ -1,19 +1,136 @@
+import re
+import string
 import torch
 from tqdm import tqdm
 from nltk import sent_tokenize, word_tokenize
+from typing import Text, Dict, List
 from compare_mt.rouge.rouge_scorer import RougeScorer
 
-from libs.utils.rouge_calculator import _f_score
+from libs.utils.rouge_calculator import _rouge_n_sentence_level, _f_score
+
+punc_patt = re.compile(f"[{re.escape(string.punctuation)}]")
 
 
-def process(x):
-    return sent_tokenize(" ".join(word_tokenize(x.strip())))
+def cal_rouge_manually(hyp: Text, ref: Text, ns: List[int] = [1]):
+    hyp = punc_patt.sub(" ", hyp)
+    ref = punc_patt.sub(" ", ref)
+    hyp_tokens = hyp.lower().split()
+    ref_tokens = ref.lower().split()
+    
+    score = {}
+    for n in ns:
+        score[n] = _rouge_n_sentence_level(hyp_tokens, ref_tokens, n).to_score(alpha=0.5)
+    
+    flatten_score = {}
+    for n in ns:
+        flatten_score[f"rouge{n}-p"] = score[n]["p"]
+        flatten_score[f"rouge{n}-r"] = score[n]["r"]
+        flatten_score[f"rouge{n}-f1"] = score[n]["f"]
+
+    return flatten_score
+
 
 def evaluate_generator(
     model,
     dataloader,
     tokenizer,
     device,
+    generation_kwargs,
+    *,
+    manual: bool = True,
+    input_name: Text = "document",
+    output_name: Text = "summary"
+):
+    if manual is True:
+        return evaluate_generator_manually(
+            model,
+            dataloader,
+            tokenizer,
+            device,
+            input_name,
+            output_name,
+            generation_kwargs
+        )
+    else:
+        return evaluate_generator_brio(
+            model,
+            dataloader,
+            tokenizer,
+            device,
+            input_name,
+            output_name,
+            generation_kwargs
+        )
+
+
+def evaluate_generator_manually(
+    model,
+    dataloader,
+    tokenizer,
+    device,
+    input_name,
+    output_name,
+    generation_kwargs
+):
+    model.eval()
+    hypotheses = []
+    references = []
+    scores = []
+    with torch.no_grad():
+        for idx, batch in enumerate(tqdm(dataloader)):
+            input_ids = batch["input_ids"]
+            input_ids = torch.stack(input_ids, dim=0).to(device)
+            output = model.generate(input_ids=input_ids, **generation_kwargs)
+            batch_hyps = [
+                tokenizer.decode(output_ids, clean_up_tokenization_spaces=False, skip_special_tokens=True)
+                for output_ids in output
+            ]
+            hypotheses.extend(batch_hyps)
+            batch_refs = batch[output_name]
+            references.extend(batch_refs)
+            for hyp, ref in zip(batch_hyps, batch_refs):
+                score = cal_rouge_manually(hyp, ref, [1, 2])
+                scores.append(score)
+
+    rouge1_precisions = []
+    rouge1_recalls = []
+    rouge2_precisions = []
+    rouge2_recalls = []
+    for score in scores:
+        rouge1_precisions.append(score["rouge1-p"])
+        rouge1_recalls.append(score["rouge1-r"])
+        rouge2_precisions.append(score["rouge2-p"])
+        rouge2_recalls.append(score["rouge2-r"])
+    
+    L = len(scores)
+    avg_rouge1_p = sum(rouge1_precisions) / L
+    avg_rouge1_r = sum(rouge1_recalls) / L
+    avg_rouge1_f1 = _f_score(avg_rouge1_p, avg_rouge1_r, alpha=0.5)
+    avg_rouge2_p = sum(rouge2_precisions) / L
+    avg_rouge2_r = sum(rouge2_recalls) / L
+    avg_rouge2_f1 = _f_score(avg_rouge2_p, avg_rouge2_r, alpha=0.5)
+
+    return {
+        "eval/rouge1-precision": avg_rouge1_p,
+        "eval/rouge1-recall": avg_rouge1_r,
+        "eval/rouge1-f1": avg_rouge1_f1,
+        "eval/rouge2-precision": avg_rouge2_p,
+        "eval/rouge2-recall": avg_rouge2_r,
+        "eval/rouge2-f1": avg_rouge2_f1
+    }
+
+
+def process(x):
+    return sent_tokenize(" ".join(word_tokenize(x.strip())))
+
+
+def evaluate_generator_brio(
+    model,
+    dataloader,
+    tokenizer,
+    device,
+    input_name,
+    output_name,
     generation_kwargs
 ):
     rouge_scorer = RougeScorer(['rouge1', 'rouge2'], use_stemmer=True)
@@ -30,7 +147,7 @@ def evaluate_generator(
                 tokenizer.decode(output_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
                 for output_ids in output
             ]
-            batch_refs = batch["summary"]
+            batch_refs = batch[output_name]
             for hyp, ref in zip(batch_hyps, batch_refs):
                 hyp = hyp.replace("\n", " ")
                 hyp = process(hyp)

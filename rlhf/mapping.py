@@ -1,3 +1,5 @@
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+
 def get_pegasus_tokenizer_class():
     from transformers import PegasusTokenizer
     return PegasusTokenizer
@@ -9,6 +11,7 @@ def get_bart_tokenizer_class():
 
 
 TOKENIZER_CLASS_MAPPING = {
+    "AutoTokenizer": AutoTokenizer,
     "PegasusTokenizer": get_pegasus_tokenizer_class(),
     "BartTokenizer": get_bart_tokenizer_class()
 }
@@ -31,6 +34,7 @@ def get_bart_model_class():
 
 
 MODEL_CLASS_MAPPING = {
+    "AutoModelForSeq2SeqLM": AutoModelForSeq2SeqLM,
     "PegasusForConditionalGeneration": get_pegasus_model_class(),
     "BartForConditionalGeneration": get_bart_model_class()
 }

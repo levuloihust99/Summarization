@@ -7,7 +7,6 @@ from tqdm import tqdm
 from typing import List, Dict, Text
 
 from torch.utils.data import DataLoader
-from transformers import BertTokenizer
 from trl import (
     PPOTrainer,
     PPOConfig,
@@ -18,7 +17,6 @@ from trl import (
 from libs.utils.logging import add_color_formater
 from libs.data_helpers.bytedataset import ByteDataset
 from libs.utils.seeding import seed_everything
-from libs.utils.rouge_calculator import _rouge_n_sentence_level
 from rlhf.arguments import (
     add_training_arguments,
     add_tokenizer_arguments,
@@ -28,6 +26,7 @@ from rlhf.arguments import (
 )
 from rlhf.mapping import resolve_tokenizer_class
 from rlhf.evaluation import evaluate_generator
+from rlhf.reward import Rouge1F1Reward, SentenceEmbeddingSimilarityReward
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -41,15 +40,34 @@ def get_xsum_args():
     return args
 
 
-def get_data_specific_args(model_name):
-    if model_name == "brio-xsum":
+def get_vietnews_args():
+    from rlhf.config import vietnews_setting
+    args = argparse.Namespace()
+    vietnews_setting(args)
+    return args
+
+
+def get_data_specific_args(data_name):
+    if data_name == "xsum":
         return get_xsum_args()
+    elif data_name == "vietnews":
+        return get_vietnews_args()
     else:
-        raise Exception("Model name '{}' is not supported.".format(model_name))
+        raise Exception("Data '{}' is not supported.".format(data_name))
+
+
+def get_metric(valid_stats, metric_for_best_model):
+    if metric_for_best_model not in valid_stats:
+        avail_stats = list(valid_stats.keys())
+        avail_stats = ", ".join(valid_stats)
+        raise Exception("Metric {} is not in the valid stats. Available stat are: {}.".format(avail_stats))
+    return valid_stats[metric_for_best_model]
 
 
 def get_data_collator(
     tokenizer,
+    input_name,
+    output_name,
     max_input_len: int = 512,
     max_output_len: int = 80,
 ):
@@ -58,9 +76,9 @@ def get_data_collator(
         summaries = []
         ids = []
         for item in items:
-            documents.append(item["document"])
-            summaries.append(item["summary"])
-            ids.append(item["id"])
+            documents.append(item[input_name])
+            summaries.append(item[output_name])
+            ids.append(item.get("id", None))
         
         encoded_documents = tokenizer(
             documents,
@@ -79,15 +97,17 @@ def get_data_collator(
             "ids": ids,
             "input_ids": [torch.tensor(v) for v in encoded_documents.input_ids],
             "decoder_input_ids": [torch.tensor(v) for v in encoded_summaries.input_ids],
-            "document": documents,
-            "summary": summaries
+            input_name: documents,
+            output_name: summaries
         }
     return collate_fn
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-name", choices=["brio-xsum"], default="brio-xsum")
+    parser.add_argument("--data_name",
+                        choices=["xsum", "vietnews"],
+                        default="xsum")
     add_training_arguments(parser)
     add_tokenizer_arguments(parser)
     add_model_arguments(parser)
@@ -96,13 +116,11 @@ def main():
     args = parser.parse_args()
 
     seed_everything(args.seed)
-    data_specific_args = get_data_specific_args(args.model_name)
+    data_specific_args = get_data_specific_args(args.data_name)
 
     # tokenizer
     tokenizer_class = resolve_tokenizer_class(args.tokenizer_class)
     tokenizer = tokenizer_class.from_pretrained(args.tokenizer_path)
-    bert_tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-    basic_tokenizer = bert_tokenizer.basic_tokenizer
 
     # policy
     policy = AutoModelForSeq2SeqLMWithValueHead.from_pretrained(args.model_path)
@@ -128,6 +146,8 @@ def main():
         shuffle=True,
         collate_fn=get_data_collator(
             tokenizer,
+            args.input_name,
+            args.output_name,
             max_input_len=data_specific_args.total_len,
             max_output_len=data_specific_args.max_len
         )
@@ -141,11 +161,21 @@ def main():
             shuffle=False,
             collate_fn=get_data_collator(
                 tokenizer,
+                args.input_name,
+                args.output_name,
                 max_input_len=data_specific_args.total_len,
                 max_output_len=data_specific_args.max_len
             )
         )
-
+    
+    # reward model
+    if args.reward_model == "rouge1-f1":
+        reward_model = Rouge1F1Reward()
+    elif args.reward_model == "vector_similarity":
+        reward_model = SentenceEmbeddingSimilarityReward(sim_model=args.sim_model)
+    else:
+        raise Exception("Reward model '{}' is not supported.".format(args.reward_model))
+    
     generation_kwargs = {
         "min_length": 4,
         "top_k": 0.0,
@@ -163,14 +193,16 @@ def main():
             valid_dataloader,
             tokenizer,
             device,
-            generation_kwargs
+            generation_kwargs,
+            input_name=args.input_name,
+            output_name=args.output_name
         )
         ppo_trainer.accelerator.log(valid_stats, step=0)
 
-    best_rouge1_f1 = float("-inf")
+    best_metric = float("-inf")
     best_checkpoint = None
     for step, batch in enumerate(tqdm(dataloader)):
-        summaries = batch["summary"]
+        summaries = batch[args.input_name]
         query_tensors = batch["input_ids"]
         query_tensors = [q.to(device) for q in query_tensors]
         response_tensors = []
@@ -186,14 +218,16 @@ def main():
             response_tensors.append(response)
             response_text = tokenizer.decode(
                 response, clean_up_tokenization_spaces=False, skip_special_tokens=True)
-            response_tokens = basic_tokenizer.tokenize(response_text)
 
-            # calculate reward (ROUGE-1 F1 score)
+            # calculate reward
             summary = summaries[i]
-            summary_tokens = basic_tokenizer.tokenize(summary)
-            metric = _rouge_n_sentence_level(response_tokens, summary_tokens, 1)
-            reward = metric.to_score(alpha=0.5)["f"] * 10
+            if args.baseline == "avg":
+                avg_reward = reward_model.get_avg_reward()
+            else:
+                avg_reward = 0
+            reward = reward_model.cal_reward(response_text, summary) - avg_reward
             rewards.append(torch.tensor(reward).to(device))
+
         # filter query_tensors
         query_tensors = [query_tensors[i] for i in range(len(query_tensors)) if i not in ignored_idxs]
         if not query_tensors:
@@ -211,6 +245,8 @@ def main():
                 valid_dataloader,
                 tokenizer,
                 device,
+                args.input_name,
+                args.output_name,
                 generation_kwargs
             )
             ppo_trainer.accelerator.log(valid_stats, step=step + 1)
@@ -221,9 +257,11 @@ def main():
                 cp_path = os.path.join(args.model_save_path, cp_name)
                 if not os.path.exists(cp_path):
                     os.makedirs(cp_path)
-                rouge1_f1 = valid_stats["eval/rouge1-f1"]
-                if rouge1_f1 > best_rouge1_f1:
-                    best_rouge1_f1 = rouge1_f1
+                metric = get_metric(valid_stats, args.metric_for_best_model)
+                if not args.greater_is_better:
+                    metric = -metric
+                if metric > best_metric:
+                    best_metric = metric
                     best_checkpoint = cp_name
                     logger.info("New best checkpoint: '{}'".format(cp_name))
                 ppo_trainer.tokenizer.save_pretrained(cp_path)

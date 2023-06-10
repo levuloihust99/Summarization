@@ -29,3 +29,10 @@ def add_data_arguments(parser: argparse.ArgumentParser):
 
 def add_other_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("--seed", type=int, default=12345)
+    parser.add_argument("--reward_model", choices=["rouge1-f1", "vector_similarity"], default="rouge1-f1")
+    parser.add_argument("--greater_is_better", type=eval)
+    parser.add_argument("--metric_for_best_model", default="eval/rouge1-f1")
+    parser.add_argument("--baseline", choices=["zero", "avg"], default="zero")
+    parser.add_argument("--sim_model", default="NtDNlp/sentence-embedding-vietnamese")
+    parser.add_argument("--input_name", default="document")
+    parser.add_argument("--output_name", default="summary")
