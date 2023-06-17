@@ -186,6 +186,12 @@ def main():
         "no_repeat_ngram_size": 3
     }
 
+    eval_generation_kwargs = {
+        "no_repeat_ngram_size": 3,
+        "max_new_tokens": data_specific_args.max_len,
+        "pad_token_id": tokenizer.eos_token_id
+    }
+
     # pre-training evaluation
     if args.do_eval and args.eval_on_first_step:
         valid_stats = evaluate_generator(
@@ -193,7 +199,7 @@ def main():
             valid_dataloader,
             tokenizer,
             device,
-            generation_kwargs,
+            eval_generation_kwargs,
             input_name=args.input_name,
             output_name=args.output_name
         )

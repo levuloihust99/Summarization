@@ -1,0 +1,18 @@
+\documentclass{{standalone}}
+\usepackage{{array}}
+\usepackage{{varwidth}}
+\usepackage[utf8]{{vietnam}}
+\usepackage{{mathpazo}}
+\usepackage{{booktabs}}
+\usepackage{{color, colortbl}}
+\definecolor{{light-gray}}{{RGB}}{{245, 245, 245}}
+\newcolumntype{{P}}[1]{{>{{\centering\arraybackslash}}p{{#1}}}}
+
+\begin{{document}}
+\renewcommand{{\arraystretch}}{{1.5}}
+\begin{{varwidth}}{{{width}\linewidth}}
+\begin{{tabular}}{{{layout}}}
+{content}
+\end{{tabular}}
+\end{{varwidth}}
+\end{{document}}
