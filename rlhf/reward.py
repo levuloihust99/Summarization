@@ -57,7 +57,10 @@ class SentenceEmbeddingSimilarityReward(object):
             outputs = self.sim_model(input_ids=input_ids, attention_mask=attention_mask, return_dict=True)
         embeddings = self.mean_pooling(outputs, attention_mask)
         embeddings = torch.nn.functional.normalize(embeddings, dim=1)
-        return torch.sum(embeddings[0] * embeddings[1]).item() * 5
+        reward = torch.sum(embeddings[0] * embeddings[1]).item() * 5
+        self.n_samples += 1
+        self.total_reward += reward
+        return reward
 
     def get_avg_reward(self):
         if self.n_samples == 0:

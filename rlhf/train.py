@@ -1,8 +1,10 @@
 import os
+import json
 import torch
 import shutil
 import logging
 import argparse
+from copy import deepcopy
 from tqdm import tqdm
 from typing import List, Dict, Text
 
@@ -117,6 +119,12 @@ def main():
 
     seed_everything(args.seed)
     data_specific_args = get_data_specific_args(args.data_name)
+    cfg = deepcopy(args.__dict__)
+    cfg.update(**deepcopy(data_specific_args.__dict__))
+    if not os.path.exists(args.model_save_path):
+        os.makedirs(args.model_save_path)
+    with open(os.path.join(args.model_save_path, "training_config.json"), "w") as writer:
+        json.dump(cfg, writer, indent=4, ensure_ascii=False)
 
     # tokenizer
     tokenizer_class = resolve_tokenizer_class(args.tokenizer_class)
@@ -167,15 +175,8 @@ def main():
                 max_output_len=data_specific_args.max_len
             )
         )
-    
-    # reward model
-    if args.reward_model == "rouge1-f1":
-        reward_model = Rouge1F1Reward()
-    elif args.reward_model == "vector_similarity":
-        reward_model = SentenceEmbeddingSimilarityReward(sim_model=args.sim_model)
-    else:
-        raise Exception("Reward model '{}' is not supported.".format(args.reward_model))
-    
+
+    # generation config
     generation_kwargs = {
         "min_length": 4,
         "top_k": 0.0,
@@ -191,7 +192,45 @@ def main():
         "max_new_tokens": data_specific_args.max_len,
         "pad_token_id": tokenizer.eos_token_id
     }
-
+    
+    # reward model
+    if args.reward_model == "rouge1-f1":
+        reward_model = Rouge1F1Reward()
+    elif args.reward_model == "vector_similarity":
+        reward_model = SentenceEmbeddingSimilarityReward(sim_model=args.sim_model)
+        # we need to seed the vector-similarity reward model
+        if args.baseline == "avg":
+            sample_dataset = ByteDataset(data_path=args.valid_data_path, idx_record_size=6)
+            sample_dataloader = DataLoader(
+                sample_dataset,
+                batch_size=1,
+                shuffle=False,
+                collate_fn=get_data_collator(
+                    tokenizer,
+                    args.input_name,
+                    args.output_name,
+                    max_input_len=data_specific_args.total_len,
+                    max_output_len=data_specific_args.max_len
+                )
+            )
+            logger.info("Iterating sample dataset to seed the reward model...")
+            progress_bar = tqdm(
+                total=min(len(sample_dataloader), args.vector_sim_data_cut),
+                desc="Batch")
+            for idx, batch in enumerate(sample_dataloader):
+                ref_summary = batch[args.output_name][0]
+                input_ids = batch["input_ids"][0].to(device)
+                hyp_summary_output = ppo_trainer.generate(input_ids, **eval_generation_kwargs)
+                hyp_summary_output = hyp_summary_output.squeeze()
+                hyp_summary = tokenizer.decode(
+                        hyp_summary_output, clean_up_tokenization_spaces=False, skip_special_tokens=True)
+                reward_model.cal_reward(hyp_summary, ref_summary)
+                progress_bar.update(1)
+                if (idx + 1) == args.vector_sim_data_cut:
+                    break
+    else:
+        raise Exception("Reward model '{}' is not supported.".format(args.reward_model))
+    
     # pre-training evaluation
     if args.do_eval and args.eval_on_first_step:
         valid_stats = evaluate_generator(
@@ -212,7 +251,7 @@ def main():
     progress_bar = tqdm(desc="Step", total=total_steps)
     for epoch in range(args.num_train_epochs):
         for step, batch in enumerate(dataloader):
-            summaries = batch[args.input_name]
+            summaries = batch[args.output_name]
             query_tensors = batch["input_ids"]
             query_tensors = [q.to(device) for q in query_tensors]
             response_tensors = []

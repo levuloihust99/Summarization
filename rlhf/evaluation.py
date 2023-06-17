@@ -1,4 +1,5 @@
 import re
+import argparse
 import string
 import torch
 from tqdm import tqdm
@@ -6,7 +7,12 @@ from nltk import sent_tokenize, word_tokenize
 from typing import Text, Dict, List
 from compare_mt.rouge.rouge_scorer import RougeScorer
 
+from torch.utils.data import DataLoader
+
+from rlhf.mapping import resolve_tokenizer_class, resolve_model_class
+from rlhf.infer import get_data_collator
 from libs.utils.rouge_calculator import _rouge_n_sentence_level, _f_score
+from libs.data_helpers.bytedataset import ByteDataset
 
 punc_patt = re.compile(f"[{re.escape(string.punctuation)}]")
 
@@ -79,8 +85,20 @@ def evaluate_generator_manually(
     with torch.no_grad():
         for idx, batch in enumerate(tqdm(dataloader)):
             input_ids = batch["input_ids"]
-            input_ids = torch.stack(input_ids, dim=0).to(device)
-            output = model.generate(input_ids=input_ids, **generation_kwargs)
+            if isinstance(batch["input_ids"], list):
+                input_ids = torch.stack(input_ids, dim=0).to(device)
+            else:
+                input_ids = input_ids.to(device)
+            if "attention_mask" in batch:
+                attention_mask = batch["attention_mask"]
+                if isinstance(attention_mask, list):
+                    attention_mask = torch.stack(attention_mask, dim=0).to(device)
+                else:
+                    attention_mask = attention_mask.to(device)
+            else:
+                attention_mask = None
+            output = model.generate(
+                input_ids=input_ids, attention_mask=attention_mask, **generation_kwargs)
             batch_hyps = [
                 tokenizer.decode(output_ids, clean_up_tokenization_spaces=False, skip_special_tokens=True)
                 for output_ids in output
@@ -188,3 +206,76 @@ def evaluate_generator_brio(
         "eval/rouge2-recall": avg_rouge2_r,
         "eval/rouge2-f1": avg_rouge2_f
     }
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data_path", required=True)
+    parser.add_argument("--tokenizer_path", default="VietAI/vit5-base-vietnews-summarization")
+    parser.add_argument("--tokenizer_class", default="AutoTokenizer")
+    parser.add_argument("--model_path", default="VietAI/vit5-base-vietnews-summarization")
+    parser.add_argument("--model_class", default="AutoModelForSeq2SeqLM")
+    parser.add_argument("--max_output_len", type=int, default=200)
+    parser.add_argument("--input_name", default="document")
+    parser.add_argument("--output_name", default="summary")
+    parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--output_stat_file", default="stats.txt")
+    parser.add_argument("--do_sample", action="store_true", default=False)
+    args = parser.parse_args()
+
+    tokenizer_class = resolve_tokenizer_class(args.tokenizer_class)
+    tokenizer = tokenizer_class.from_pretrained(args.tokenizer_path)
+
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    model_class = resolve_model_class(args.model_class)
+    model = model_class.from_pretrained(args.model_path)
+    model.to(device)
+    model.eval()
+
+    default_gen_kwargs = {
+        "no_repeat_ngram_size": 3,
+        "max_new_tokens": args.max_output_len,
+        "pad_token_id": tokenizer.eos_token_id,
+        "do_sample": args.do_sample,
+    }
+
+    dataset = ByteDataset(args.data_path, 6)
+    data_collator = get_data_collator(
+        tokenizer,
+        input_name=args.input_name,
+        output_name=args.output_name,
+        max_input_len=None,
+        max_output_len=None
+    )
+    dataloader = DataLoader(
+        dataset=dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        collate_fn=data_collator
+    )
+
+    stats = evaluate_generator(
+        model=model,
+        dataloader=dataloader,
+        tokenizer=tokenizer,
+        device=device,
+        generation_kwargs=default_gen_kwargs,
+        manual=True,
+        input_name=args.input_name,
+        output_name=args.output_name
+    )
+    metrics = [m[len("eval/"):] for m in stats]
+    max_metric_name_len = max(len(m) for m in metrics)
+    output = ""
+    for m, v in zip(metrics, stats.values()):
+        row = (m + " " * (max_metric_name_len - len(m) + 1) + "= ")
+        row = "{}{}".format(row, v)
+        output += row + "\n"
+
+    print(output)
+    with open(args.output_stat_file, "w") as writer:
+        writer.write(output)
+
+
+if __name__ == "__main__":
+    main()

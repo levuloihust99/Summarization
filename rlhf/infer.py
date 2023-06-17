@@ -76,8 +76,8 @@ def get_data_collator(
             "attention_mask": input_features.attention_mask,
             "decoder_input_ids": output_features.input_ids,
             "decoder_attention_mask": output_features.attention_mask,
-            "input": input_texts,
-            "output": output_texts
+            input_name: input_texts,
+            output_name: output_texts
         }
         return batch
     return collate_fn
@@ -137,8 +137,8 @@ def main():
             for output_ids in outputs
         ]
         all_hyp_texts.extend(output_texts)
-        all_ref_texts.extend(batch["output"])
-        all_inputs.extend(batch["input"])
+        all_ref_texts.extend(batch[args.output_name])
+        all_inputs.extend(batch[args.input_name])
     
     with open(args.output_path, "w") as csvfile:
         csv_writer = csv.DictWriter(
