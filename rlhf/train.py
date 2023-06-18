@@ -318,6 +318,7 @@ def main():
 
                     # remove old checkpoints if neccessary
                     all_checkpoints = os.listdir(args.model_save_path)
+                    all_checkpoints = [cp for cp in all_checkpoints if cp != "training_config.json"]
                     all_checkpoints = [cp for cp in all_checkpoints if cp != best_checkpoint]
                     all_checkpoints = [os.path.join(args.model_save_path, cp) for cp in all_checkpoints]
                     all_checkpoints = sorted(all_checkpoints, key=lambda x: os.path.getctime(x), reverse=True)
