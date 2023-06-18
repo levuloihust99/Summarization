@@ -249,9 +249,15 @@ def main():
     global_step = 0
     total_steps = len(dataloader) * args.num_train_epochs
     progress_bar = tqdm(desc="Step", total=total_steps)
+
+    if args.anchor == "input":
+        anchor_name = args.input_name
+    else:
+        anchor_name = args.output_name
+
     for epoch in range(args.num_train_epochs):
         for step, batch in enumerate(dataloader):
-            summaries = batch[args.output_name]
+            anchors = batch[anchor_name]
             query_tensors = batch["input_ids"]
             query_tensors = [q.to(device) for q in query_tensors]
             response_tensors = []
@@ -269,12 +275,12 @@ def main():
                     response, clean_up_tokenization_spaces=False, skip_special_tokens=True)
 
                 # calculate reward
-                summary = summaries[i]
+                anchor = anchors[i]
                 if args.baseline == "avg":
                     avg_reward = reward_model.get_avg_reward()
                 else:
                     avg_reward = 0
-                reward = reward_model.cal_reward(response_text, summary) - avg_reward
+                reward = reward_model.cal_reward(response_text, anchor) - avg_reward
                 rewards.append(torch.tensor(reward).to(device))
 
             # filter query_tensors

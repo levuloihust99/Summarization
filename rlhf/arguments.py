@@ -38,3 +38,4 @@ def add_other_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("--input_name", default="document")
     parser.add_argument("--output_name", default="summary")
     parser.add_argument("--vector_sim_data_cut", type=int, default=100)
+    parser.add_argument("--anchor", choices=["input", "output"], default="output")
