@@ -1,14 +1,18 @@
 import os
 import json
 import torch
+import random
 import shutil
 import logging
 import argparse
-from copy import deepcopy
+
+import numpy as np
 from tqdm import tqdm
+from copy import deepcopy
 from typing import List, Dict, Text
 
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 from trl import (
     PPOTrainer,
     PPOConfig,
@@ -134,6 +138,22 @@ def main():
     policy = AutoModelForSeq2SeqLMWithValueHead.from_pretrained(args.model_path)
     sft_model = create_reference_model(policy)
 
+    # resume from checkpoint
+    if args.resume_from_checkpoint is not None:
+        logger.info("Resume training from checkpoint {}".format(args.resume_from_checkpoint))
+        logger.info("Loading model weights...")
+        model_dict = torch.load(os.path.join(args.resume_from_checkpoint, "pytorch_model.bin"), map_location=lambda s, t: s)
+        v_head_state_dict = {}
+        pretrained_model_state_dict = {}
+        for k, v in model_dict.items():
+            if k.startswith("v_head."):
+                v_head_state_dict[k.replace("v_head.", "")] = v
+            else:
+                pretrained_model_state_dict[k] = v
+        policy.pretrained_model.load_state_dict(pretrained_model_state_dict)
+        policy.v_head.load_state_dict(v_head_state_dict)
+        logger.info("Model weights loaded")
+
     # initialize trainer
     ppo_config = PPOConfig(
         learning_rate=args.learning_rate,
@@ -144,14 +164,21 @@ def main():
         }
     )
     ppo_trainer = PPOTrainer(ppo_config, policy, sft_model, tokenizer)
+    if args.resume_from_checkpoint is not None:
+        logger.info("Loading optimizer state...")
+        optimizer_state = torch.load(os.path.join(args.resume_from_checkpoint, "optimizer.pt"), map_location=lambda s, t: s)
+        ppo_trainer.optimizer.load_state_dict(optimizer_state)
+        logger.info("Optimizer state loaded")
     device = ppo_trainer.accelerator.device
     
     # data loader
     dataset = ByteDataset(data_path=args.data_path, idx_record_size=6)
+    # currently, multi-gpu training is disabled
+    sampler = DistributedSampler(dataset, num_replicas=1, rank=0, shuffle=True, seed=args.seed)
     dataloader = DataLoader(
         dataset,
         batch_size=args.batch_size,
-        shuffle=True,
+        sampler=sampler,
         collate_fn=get_data_collator(
             tokenizer,
             args.input_name,
@@ -246,17 +273,50 @@ def main():
 
     best_metric = float("-inf")
     best_checkpoint = None
+    trained_epochs = 0
+    data_step = 0
     global_step = 0
+    if args.resume_from_checkpoint is not None:
+        rng_states_file = os.path.join(args.resume_from_checkpoint, "rng_state.pth")
+        rng_states = torch.load(rng_states_file)
+        random.setstate(rng_states["python"])
+        np.random.set_state(rng_states["numpy"])
+        torch.random.set_rng_state(rng_states["cpu"])
+        if torch.cuda.is_available():
+            torch.cuda.random.set_rng_state(rng_states["cuda"])
+        logger.info("Loaded RNG states from {}".format(rng_states_file))
+        
+        training_state_file = os.path.join(args.resume_from_checkpoint, "training_state.json")
+        with open(training_state_file, "r") as reader:
+            training_state = json.load(reader)
+        best_metric = training_state["best_metric"]
+        best_checkpoint = training_state["best_checkpoint"]
+        trained_epochs = training_state["epoch"]
+        data_step = training_state["data_step"]
+        global_step = training_state["global_step"]
+        logger.info("Loaded training state from {}".format(training_state_file))
+
     total_steps = len(dataloader) * args.num_train_epochs
-    progress_bar = tqdm(desc="Step", total=total_steps)
+    progress_bar = tqdm(desc="Step", total=total_steps, initial=global_step)
 
     if args.anchor == "input":
         anchor_name = args.input_name
     else:
         anchor_name = args.output_name
 
-    for epoch in range(args.num_train_epochs):
-        for step, batch in enumerate(dataloader):
+    for epoch in range(trained_epochs, args.num_train_epochs):
+        if data_step == len(dataloader):
+            data_step = 0
+            continue
+        sampler.set_epoch(epoch)
+        data_iterator = iter(dataloader)
+        for i in range(data_step):
+            next(data_iterator)
+        if data_step > 0: # this is a resume
+            torch.random.set_rng_state(rng_states["cpu"])
+
+        for i, batch in enumerate(data_iterator):
+            step = i + data_step
             anchors = batch[anchor_name]
             query_tensors = batch["input_ids"]
             query_tensors = [q.to(device) for q in query_tensors]
@@ -295,16 +355,17 @@ def main():
             # Save model
             if (global_step + 1) % args.save_steps == 0:
                 # evaluation
-                valid_stats = evaluate_generator(
-                    ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).pretrained_model,
-                    valid_dataloader,
-                    tokenizer,
-                    device,
-                    generation_kwargs,
-                    input_name=args.input_name,
-                    output_name=args.output_name
-                )
-                ppo_trainer.accelerator.log(valid_stats, step=global_step + 1)
+                if args.do_eval:
+                    valid_stats = evaluate_generator(
+                        ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).pretrained_model,
+                        valid_dataloader,
+                        tokenizer,
+                        device,
+                        generation_kwargs,
+                        input_name=args.input_name,
+                        output_name=args.output_name
+                    )
+                    ppo_trainer.accelerator.log(valid_stats, step=global_step + 1)
 
                 # save checkpoint
                 if ppo_trainer.accelerator.is_main_process:
@@ -312,15 +373,52 @@ def main():
                     cp_path = os.path.join(args.model_save_path, cp_name)
                     if not os.path.exists(cp_path):
                         os.makedirs(cp_path)
-                    metric = get_metric(valid_stats, args.metric_for_best_model)
-                    if not args.greater_is_better:
-                        metric = -metric
-                    if metric > best_metric:
-                        best_metric = metric
-                        best_checkpoint = cp_name
-                        logger.info("New best checkpoint: '{}'".format(cp_name))
+
+                    if args.do_eval:
+                        metric = get_metric(valid_stats, args.metric_for_best_model)
+                        if not args.greater_is_better:
+                            metric = -metric
+                        if metric > best_metric:
+                            best_metric = metric
+                            best_checkpoint = cp_name
+                            logger.info("New best checkpoint: {}".format(cp_name))
+
                     ppo_trainer.tokenizer.save_pretrained(cp_path)
+                    logger.info("Saved tokenizer into {}".format(cp_path))
+                    logger.info("Saving model...")
                     ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).save_pretrained(cp_path)
+                    logger.info("Saved model into {}".format(cp_path))
+
+                    # save optimizer
+                    logger.info("Saving optimizer state...")
+                    optimizer_save_file = os.path.join(cp_path, "optimizer.pt")
+                    torch.save(ppo_trainer.optimizer.state_dict(), optimizer_save_file)
+                    logger.info("Saved optimizer state into {}".format(optimizer_save_file))
+
+                    # save RNG state
+                    rng_states = {
+                        "python": random.getstate(),
+                        "numpy": np.random.get_state(),
+                        "cpu": torch.random.get_rng_state(),
+                    }
+                    if torch.cuda.is_available():
+                        rng_states["cuda"] = torch.cuda.random.get_rng_state()
+                    rng_states_file = os.path.join(cp_path, "rng_state.pth")
+                    torch.save(rng_states, rng_states_file)
+                    logger.info("Saved RNG states into {}".format(rng_states_file))
+
+                    # save training state
+                    training_state = {
+                        "epoch": epoch,
+                        "global_step": global_step + 1,
+                        "data_step": step + 1,
+                        "best_checkpoint": best_checkpoint,
+                        "best_metric": best_metric
+                    }
+                    training_state_file = os.path.join(cp_path, "training_state.json")
+                    with open(training_state_file, "w") as writer:
+                        json.dump(training_state, writer)
+                    logger.info("Saved training state into '{}'".format(training_state_file))
 
                     # remove old checkpoints if neccessary
                     all_checkpoints = os.listdir(args.model_save_path)
@@ -328,15 +426,19 @@ def main():
                     all_checkpoints = [cp for cp in all_checkpoints if cp != best_checkpoint]
                     all_checkpoints = [os.path.join(args.model_save_path, cp) for cp in all_checkpoints]
                     all_checkpoints = sorted(all_checkpoints, key=lambda x: os.path.getctime(x), reverse=True)
-                    all_checkpoints = [
-                        os.path.join(args.model_save_path, best_checkpoint)
-                    ] + all_checkpoints
+                    if best_checkpoint is not None:
+                        all_checkpoints = [
+                            os.path.join(args.model_save_path, best_checkpoint)
+                        ] + all_checkpoints
                     tobe_removed_checkpoints = all_checkpoints[args.keep_checkpoint_max:]
                     for cp in tobe_removed_checkpoints:
                         logger.info("Deleting {} since maximum kept checkpoints is {}...".format(cp, args.keep_checkpoint_max))
                         shutil.rmtree(cp)
+                        logger.info("Deleted {}".format(cp))
             progress_bar.update(1)
             global_step += 1
+            if step + 1 == len(dataloader):
+                data_step = 0
 
 
 if __name__ == "__main__":
