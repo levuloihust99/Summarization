@@ -294,6 +294,7 @@ def main():
         trained_epochs = training_state["epoch"]
         data_step = training_state["data_step"]
         global_step = training_state["global_step"]
+        ppo_trainer.current_step = global_step
         logger.info("Loaded training state from {}".format(training_state_file))
 
     total_steps = len(dataloader) * args.num_train_epochs
