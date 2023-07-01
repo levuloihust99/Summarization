@@ -291,7 +291,7 @@ def main():
         logger.info("Loaded training state from {}".format(training_state_file))
 
     # pre-training evaluation
-    if args.do_eval and args.eval_on_first_step:
+    if args.do_eval and args.eval_on_first_step and args.resume_from_checkpoint is not None:
         valid_stats = evaluate_generator(
             ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).pretrained_model,
             valid_dataloader,
@@ -301,7 +301,7 @@ def main():
             input_name=args.input_name,
             output_name=args.output_name
         )
-        ppo_trainer.accelerator.log(valid_stats, step=global_step)
+        ppo_trainer.accelerator.log(valid_stats, step=global_step + 1)
 
     total_steps = len(dataloader) * args.num_train_epochs
     progress_bar = tqdm(desc="Step", total=total_steps, initial=global_step)
