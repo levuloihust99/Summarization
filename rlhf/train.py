@@ -227,49 +227,42 @@ def main():
         reward_model = SentenceEmbeddingSimilarityReward(sim_model=args.sim_model)
         # we need to seed the vector-similarity reward model
         if args.baseline == "avg":
-            sample_dataset = ByteDataset(data_path=args.valid_data_path, idx_record_size=6)
-            sample_dataloader = DataLoader(
-                sample_dataset,
-                batch_size=1,
-                shuffle=False,
-                collate_fn=get_data_collator(
-                    tokenizer,
-                    args.input_name,
-                    args.output_name,
-                    max_input_len=data_specific_args.total_len,
-                    max_output_len=data_specific_args.max_len
+            if args.resume_from_checkpoint is None:
+                sample_dataset = ByteDataset(data_path=args.valid_data_path, idx_record_size=6)
+                sample_dataloader = DataLoader(
+                    sample_dataset,
+                    batch_size=1,
+                    shuffle=False,
+                    collate_fn=get_data_collator(
+                        tokenizer,
+                        args.input_name,
+                        args.output_name,
+                        max_input_len=data_specific_args.total_len,
+                        max_output_len=data_specific_args.max_len
+                    )
                 )
-            )
-            logger.info("Iterating sample dataset to seed the reward model...")
-            progress_bar = tqdm(
-                total=min(len(sample_dataloader), args.vector_sim_data_cut),
-                desc="Batch")
-            for idx, batch in enumerate(sample_dataloader):
-                ref_summary = batch[args.output_name][0]
-                input_ids = batch["input_ids"][0].to(device)
-                hyp_summary_output = ppo_trainer.generate(input_ids, **eval_generation_kwargs)
-                hyp_summary_output = hyp_summary_output.squeeze()
-                hyp_summary = tokenizer.decode(
-                        hyp_summary_output, clean_up_tokenization_spaces=False, skip_special_tokens=True)
-                reward_model.cal_reward(hyp_summary, ref_summary)
-                progress_bar.update(1)
-                if (idx + 1) == args.vector_sim_data_cut:
-                    break
+                logger.info("Iterating sample dataset to seed the reward model...")
+                progress_bar = tqdm(
+                    total=min(len(sample_dataloader), args.vector_sim_data_cut),
+                    desc="Batch")
+                for idx, batch in enumerate(sample_dataloader):
+                    ref_summary = batch[args.output_name][0]
+                    input_ids = batch["input_ids"][0].to(device)
+                    hyp_summary_output = ppo_trainer.generate(input_ids, **eval_generation_kwargs)
+                    hyp_summary_output = hyp_summary_output.squeeze()
+                    hyp_summary = tokenizer.decode(
+                            hyp_summary_output, clean_up_tokenization_spaces=False, skip_special_tokens=True)
+                    reward_model.cal_reward(hyp_summary, ref_summary)
+                    progress_bar.update(1)
+                    if (idx + 1) == args.vector_sim_data_cut:
+                        break
+            else:
+                with open(os.path.join(args.resume_from_checkpoint, "training_state.json"), "r") as reader:
+                    training_state = json.load(reader)
+                reward_model.total_reward = training_state["reward_model"]["total_reward"]
+                reward_model.n_samples = training_state["reward_model"]["n_samples"]
     else:
         raise Exception("Reward model '{}' is not supported.".format(args.reward_model))
-    
-    # pre-training evaluation
-    if args.do_eval and args.eval_on_first_step:
-        valid_stats = evaluate_generator(
-            ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).pretrained_model,
-            valid_dataloader,
-            tokenizer,
-            device,
-            eval_generation_kwargs,
-            input_name=args.input_name,
-            output_name=args.output_name
-        )
-        ppo_trainer.accelerator.log(valid_stats, step=0)
 
     best_metric = float("-inf")
     best_checkpoint = None
@@ -297,6 +290,19 @@ def main():
         ppo_trainer.current_step = global_step
         logger.info("Loaded training state from {}".format(training_state_file))
 
+    # pre-training evaluation
+    if args.do_eval and args.eval_on_first_step:
+        valid_stats = evaluate_generator(
+            ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).pretrained_model,
+            valid_dataloader,
+            tokenizer,
+            device,
+            eval_generation_kwargs,
+            input_name=args.input_name,
+            output_name=args.output_name
+        )
+        ppo_trainer.accelerator.log(valid_stats, step=global_step)
+
     total_steps = len(dataloader) * args.num_train_epochs
     progress_bar = tqdm(desc="Step", total=total_steps, initial=global_step)
 
@@ -315,6 +321,8 @@ def main():
             next(data_iterator)
         if data_step > 0: # this is a resume
             torch.random.set_rng_state(rng_states["cpu"])
+            if torch.cuda.is_available():
+                torch.cuda.random.set_rng_state(rng_states["cuda"])
 
         for i, batch in enumerate(data_iterator):
             step = i + data_step
@@ -366,7 +374,7 @@ def main():
                         input_name=args.input_name,
                         output_name=args.output_name
                     )
-                    ppo_trainer.accelerator.log(valid_stats, step=global_step + 1)
+                    ppo_trainer.accelerator.log(valid_stats, step=global_step)
 
                 # save checkpoint
                 if ppo_trainer.accelerator.is_main_process:
@@ -416,6 +424,11 @@ def main():
                         "best_checkpoint": best_checkpoint,
                         "best_metric": best_metric
                     }
+                    if args.baseline == "avg":
+                        training_state["reward_model"] = {
+                            "total_reward": reward_model.total_reward,
+                            "n_samples": reward_model.n_samples
+                        }
                     training_state_file = os.path.join(cp_path, "training_state.json")
                     with open(training_state_file, "w") as writer:
                         json.dump(training_state, writer)
