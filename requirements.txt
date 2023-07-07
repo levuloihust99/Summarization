@@ -1,0 +1,11 @@
+torch
+transformers < 4.29
+sentencepiece
+datasets
+evaluation
+trl
+nltk
+compare-mt
+accelerate >= 0.19, < 0.20
+protobuf < 4
+tensorboard
