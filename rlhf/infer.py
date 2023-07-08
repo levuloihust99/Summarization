@@ -88,7 +88,7 @@ def main():
     parser.add_argument("--model_save_path", required=True)
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--data_path", required=True)
-    parser.add_argument("--data_format", choices=["jsonlines, bytedataset, json"], default="jsonlines")
+    parser.add_argument("--data_format", choices=["jsonlines", "bytedataset", "json"], default="jsonlines")
     parser.add_argument("--input_name", default="in")
     parser.add_argument("--output_name", default="out")
     parser.add_argument("--max_input_len", type=int, default=None)
