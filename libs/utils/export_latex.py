@@ -76,7 +76,6 @@ def main():
                 row_latex = "\\rowcolor{light-gray}" + row_latex
             content += row_latex
             row_count += 1
-        content += "\\\\"
     
     with open(args.template_file, "r") as reader:
         template = reader.read()

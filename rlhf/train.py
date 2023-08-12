@@ -245,8 +245,12 @@ def main():
                 progress_bar = tqdm(
                     total=min(len(sample_dataloader), args.vector_sim_data_cut),
                     desc="Batch")
+                if args.anchor == "input":
+                    anchor_name = args.input_name
+                else:
+                    anchor_name = args.output_name
                 for idx, batch in enumerate(sample_dataloader):
-                    ref_summary = batch[args.output_name][0]
+                    ref_summary = batch[anchor_name][0]
                     input_ids = batch["input_ids"][0].to(device)
                     hyp_summary_output = ppo_trainer.generate(input_ids, **eval_generation_kwargs)
                     hyp_summary_output = hyp_summary_output.squeeze()
