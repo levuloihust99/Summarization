@@ -13,3 +13,10 @@ model_generation.bin
 outputs/
 **.ipynb_checkpoints/
 rlhf/learn/
+/*.py
+notebook.ipynb
+/*.txt
+/sample_inputs/
+/tests/
+/trl/
+/examples/
