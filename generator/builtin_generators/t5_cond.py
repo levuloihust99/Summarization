@@ -51,14 +51,26 @@ class T5ConditionalGeneratorSummarizer:
                 sequence_output = sequence_output * (self.model.model_dim**-0.5)
             logits = self.model.lm_head(sequence_output) # [bsz, seq_len, vocab_size]
             next_token_logits = logits[:, -1:, :]
+            if hasattr(self, "cache"):
+                next_ids = torch.argmax(next_token_logits, dim=-1, keepdim=True)
+                token_logits = torch.gather(next_token_logits, 2, next_ids)
+                next_ids = torch.squeeze(next_ids, dim=(1, 2))
+                token_logits = torch.squeeze(token_logits, dim=(1, 2))
+                for i, (token_id, token_logit) in enumerate(zip(next_ids, token_logits)):
+                    self.cache[i].append((token_id.item(), token_logit.item()))
             tracker.update(
                 past_key_values=past_key_values, encoder_hidden_states=encoder_hidden_states
             )
         return next_token_logits
     
-    def greedy(self, inputs: Union[Text, List[Text]], max_length: int = 300) -> List[Text]:
+    def greedy(self, inputs: Union[Text, List[Text]], max_length: int = 300, **kwargs) -> List[Text]:
         inputs = self.tokenizer(inputs, padding=True, return_tensors="pt")
         batch_size = inputs.input_ids.size(0)
+        if kwargs.get("debug"):
+            cache = []
+            for _ in range(batch_size):
+                cache.append([])
+            setattr(self, "cache", cache)
         alive_seq = torch.full(
             [batch_size, 1],
             self.model.config.decoder_start_token_id,
