@@ -67,8 +67,8 @@ class T5ConditionalGeneratorSummarizer:
         )
         outputs = greedy(
             self,
-            encoder_input_ids=inputs.input_ids,
-            encoder_attention_mask=inputs.attention_mask,
+            encoder_input_ids=inputs.input_ids.to(self.device),
+            encoder_attention_mask=inputs.attention_mask.to(self.device),
             decoder_start_token_id=self.model.config.decoder_start_token_id,
             decoder_end_token_id=self.tokenizer.eos_token_id,
             decoder_input_ids=alive_seq,
