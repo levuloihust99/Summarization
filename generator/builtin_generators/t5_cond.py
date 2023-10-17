@@ -59,7 +59,9 @@ class T5ConditionalGeneratorSummarizer:
                 for i, (token_id, token_logit) in enumerate(zip(next_ids, token_logits)):
                     self.cache[i].append((token_id.item(), token_logit.item()))
             tracker.update(
-                past_key_values=past_key_values, encoder_hidden_states=encoder_hidden_states
+                past_key_values=past_key_values,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_attention_mask
             )
         return next_token_logits
     

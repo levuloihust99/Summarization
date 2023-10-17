@@ -50,7 +50,9 @@ class MBartConditionalGeneratorSummarizer:
             logits = self.model.lm_head(sequence_output) + self.model.final_logits_bias # [bsz, seq_len, vocab_size]
             next_token_logits = logits[:, -1:, :]
             tracker.update(
-                past_key_values=past_key_values, encoder_hidden_states=encoder_hidden_states
+                past_key_values=past_key_values,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_attention_mask
             )
         return next_token_logits
     

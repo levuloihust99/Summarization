@@ -54,7 +54,9 @@ def greedy(
             batch_indices = batch_indices.index_select(0, selected_indices)
             tracker.update(
                 input_ids=tracker["input_ids"].index_select(0, selected_indices),
-                past_key_values=recursive_apply(tracker["past_key_values"], fn=lambda x: x.index_select(0, selected_indices))
+                past_key_values=recursive_apply(tracker["past_key_values"], fn=lambda x: x.index_select(0, selected_indices)),
+                encoder_hidden_states=tracker["encoder_hidden_states"].index_select(0, selected_indices),
+                encoder_attention_mask=tracker["encoder_attention_mask"].index_select(0, selected_indices)
             )
 
         generated_tokens += 1
