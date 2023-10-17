@@ -38,11 +38,11 @@ def main():
     progress_bar = tqdm(total=len(data), desc="Processing")
     for item in data:
         if len(batch) == batch_size:
-            outputs = summarizer.greedy([item["input"] for item in batch])
-            for output, item in zip(outputs, batch):
+            outputs = summarizer.greedy([_item["input"] for _item in batch])
+            for output, _item in zip(outputs, batch):
                 out_data.append({
-                    "sampleId": item["sampleId"],
-                    "input": item["input"],
+                    "sampleId": _item["sampleId"],
+                    "input": _item["input"],
                     "output": output
                 })
                 progress_bar.update(1)
@@ -50,11 +50,11 @@ def main():
         batch.append(item)
     
     if len(batch) > 0:
-        outputs = summarizer.greedy([item["input"] for item in batch])
-        for output, item in zip(outputs, batch):
+        outputs = summarizer.greedy([_item["input"] for _item in batch])
+        for output, _item in zip(outputs, batch):
             out_data.append({
-                "sampleId": item["sampleId"],
-                "input": item["input"],
+                "sampleId": _item["sampleId"],
+                "input": _item["input"],
                 "output": output
             })
             progress_bar.update(1)
