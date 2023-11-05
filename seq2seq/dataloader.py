@@ -21,7 +21,7 @@ def get_collate_fn(
     max_input_len: int = None,
     max_output_len: int = None,
     input_name: Text = "prompt",
-    output_name: Text = "completion"
+    output_name: Text = "completion",
 ):
     def collate_fn(items: List[Dict[Text, Any]]):
         if input_transform:
@@ -52,15 +52,20 @@ def get_collate_fn(
         if max_output_len is None:
             max_output_len = float("inf")
 
+        encoder_bos_token_id = tokenizer.sep_token_id or tokenizer.eos_token_id
+
         for item in items:
             input_ids = tokenizer.encode(normalizer(item[input_name]))
-            output_ids = tokenizer.encode(normalizer(item[output_name]))
+            output_tokens = tokenizer.tokenize(normalizer(item[output_name]))
+            output_ids = tokenizer.convert_tokens_to_ids(output_tokens)
+            output_ids = output_ids + [tokenizer.eos_token_id]
 
             if len(input_ids) > max_input_len:
                 input_ids = input_ids[:max_input_len]
-                input_ids[-1] = tokenizer.eos_token_id
+                input_ids[-1] = encoder_bos_token_id
             if len(output_ids) > max_output_len:
                 output_ids = output_ids[:max_output_len]
+                output_ids[-1] = tokenizer.eos_token_id
 
             labels = output_ids
             output_ids = [decoder_start_token_id] + output_ids[:-1]

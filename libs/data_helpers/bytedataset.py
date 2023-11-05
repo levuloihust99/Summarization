@@ -65,3 +65,7 @@ class ByteDataset(Dataset):
         if self.transform:
             return self.transform(record)
         return record
+
+    def __del__(self):
+        self.idx_reader.close()
+        self.data_reader.close()

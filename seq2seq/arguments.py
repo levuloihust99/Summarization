@@ -3,9 +3,13 @@ import argparse
 
 def create_parser():
     parser = argparse.ArgumentParser(argument_default=argparse.SUPPRESS)
-    parser.add_argument("--tokenizer_path", required=True,
+    parser.add_argument("--tokenizer_path",
                         help="Path to the tokenizer to be instantiated by AutoTokenizer")
-    parser.add_argument("--model_path", required=True,
+    parser.add_argument("--use_fast", type=eval,
+                        help="Whether to use fast tokenizer")
+    parser.add_argument("--model_type",
+                        help="Type of the model to initialize")
+    parser.add_argument("--model_path",
                         help="Path to the model to be instantiated by AutoModelForSeq2SeqLM")
     parser.add_argument("--train_data_path",
                         help="Path to the train bytedataset directory.")
@@ -57,5 +61,7 @@ def create_parser():
     # data params
     parser.add_argument("--input_transform", choices=["json_sequentialize"])
     parser.add_argument("--output_transform", choices=["json_sequentialize"])
+
+    parser.add_argument("--hparams", default="{}")
 
     return parser

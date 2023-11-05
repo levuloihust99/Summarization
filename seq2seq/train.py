@@ -1,6 +1,7 @@
 import re
 import os
 import json
+import copy
 import string
 import torch
 import numpy as np
@@ -12,12 +13,19 @@ from transformers import (
 )
 from typing import Text, List
 
-from .config import default_config
+from .configuration import Seq2SeqConfig
 from .arguments import create_parser
-from libs.data_helpers.bytedataset import ByteDataset
 from .preprocessing import NFKCNormalizer
 from .dataloader import get_collate_fn
+from .modeling import init_model
+from libs.data_helpers.bytedataset import ByteDataset
 from libs.utils.rouge_calculator import _rouge_n_sentence_level, _f_score
+
+
+def override_defaults(hparams, args):
+    for key in args:
+        hparams[key] = args[key]
+    return hparams
 
 
 def calculate_rouge_score(pred: Text, ref: Text, ns: List[int] = [1]):
@@ -113,16 +121,18 @@ def get_compute_metrics(tokenizer, predict_with_generate: bool):
     return compute_metrics
 
 
-def get_config(cfg, args):
-    for k, v in args.__dict__.items():
-        cfg.__dict__[k] = v
-    return cfg
-
-
 def main():
     parser = create_parser()
     args = parser.parse_args()
-    cfg = get_config(default_config, args)
+    args_json = copy.deepcopy(args.__dict__)
+    hparams = args_json.pop('hparams')
+    if args.hparams.endswith('.json'):
+        with open(args.hparams, "r") as f:
+            hparams = json.load(f)
+    else:
+        hparams = json.loads(args.hparams)
+    hparams = override_defaults(hparams, args_json)
+    cfg = Seq2SeqConfig(**hparams)
 
     if not os.path.exists(cfg.output_dir):
         os.makedirs(cfg.output_dir)
@@ -130,8 +140,17 @@ def main():
         json.dump(cfg.to_json(), writer, indent=4, ensure_ascii=False)
 
     normalizer = NFKCNormalizer()
-    tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path)
-    model = AutoModelForSeq2SeqLM.from_pretrained(cfg.model_path)
+    tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path, use_fast=cfg.use_fast)
+    if cfg.model_path:
+        model = AutoModelForSeq2SeqLM.from_pretrained(cfg.model_path)
+    else:
+        model = init_model(
+            cfg.model_type,
+            decoder_start_token_id=tokenizer.bos_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+            pad_token_id=tokenizer.pad_token_id,
+            vocab_size=tokenizer.vocab_size
+        )
 
     # train dataloader
     train_dataset = None
@@ -140,10 +159,15 @@ def main():
     valid_dataset = None
     if cfg.do_eval:
         valid_dataset = ByteDataset(cfg.valid_data_path, 6)
+    decoder_start_token_id = (
+        model.config.decoder_start_token_id or
+        tokenizer.bos_token_id or
+        tokenizer.pad_token_id
+    )
     data_collate_fn = get_collate_fn(
         tokenizer=tokenizer,
         normalizer=normalizer,
-        decoder_start_token_id=model.config.decoder_start_token_id,
+        decoder_start_token_id=decoder_start_token_id,
         input_transform=cfg.input_transform,
         output_transform=cfg.output_transform,
         max_input_len=cfg.max_input_len,
@@ -186,7 +210,7 @@ def main():
         remove_unused_columns=cfg.remove_unused_columns,
         generation_max_length=cfg.generation_max_length,
         generation_num_beams=cfg.generation_num_beams,
-        data_seed=cfg.data_seed
+        data_seed=cfg.data_seed,
     )
 
     # Trainer: trainer takes care of switching between train/eval mode.
