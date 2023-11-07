@@ -48,10 +48,10 @@ def greedy(
                 outputs[batch_indices[idx]] = alive_seq[idx]
         selected_indices = is_finished.eq(0).nonzero().view(-1)
         if selected_indices.size(0) < alive_seq.size(0):
-            if selected_indices.size(0) == 0:
-                break
             alive_seq = alive_seq.index_select(0, selected_indices)
             batch_indices = batch_indices.index_select(0, selected_indices)
+            if selected_indices.size(0) == 0:
+                break
             tracker.update(
                 input_ids=tracker["input_ids"].index_select(0, selected_indices),
                 past_key_values=recursive_apply(tracker["past_key_values"], fn=lambda x: x.index_select(0, selected_indices)),
@@ -64,8 +64,8 @@ def greedy(
         if generated_tokens == max_length:
             break
     
-    if selected_indices.size(0) > 0:
-        for idx in selected_indices:
+    if batch_indices.size(0) > 0:
+        for idx in range(len(batch_indices)):
             outputs[batch_indices[idx]] = alive_seq[idx]
 
     return outputs
