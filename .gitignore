@@ -20,3 +20,7 @@ notebook.ipynb
 /tests/
 /trl/
 /examples/
+artifacts/
+load_lora.ipynb
+manual_completions/
+manual_prompts/

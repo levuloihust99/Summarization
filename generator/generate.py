@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--input_path", "-i", default="data/vietnews-hf/ranking-data/20ksubset/data/jsonl")
     parser.add_argument("--output_path", "-o", default="data/vietnews-hf/ranking-data/20ksubset-l1/VietAI_vit5.jsonl")
     parser.add_argument("--batch_size", type=int, default=10)
+    parser.add_argument("--block_n_grams", type=int, default=3)
     parser.add_argument("--type", default="t5_cond")
     parser.add_argument("--model_path", default="VietAI/vit5-base-vietnews-summarization")
     args = parser.parse_args()
@@ -38,7 +39,7 @@ def main():
     progress_bar = tqdm(total=len(data), desc="Processing")
     for item in data:
         if len(batch) == batch_size:
-            outputs = summarizer.greedy([_item["input"] for _item in batch])
+            outputs = summarizer.greedy([_item["input"] for _item in batch], block_n_grams=args.block_n_grams)
             for output, _item in zip(outputs, batch):
                 out_data.append({
                     "sampleId": _item["sampleId"],
@@ -50,7 +51,7 @@ def main():
         batch.append(item)
     
     if len(batch) > 0:
-        outputs = summarizer.greedy([_item["input"] for _item in batch])
+        outputs = summarizer.greedy([_item["input"] for _item in batch], block_n_grams=args.block_n_grams)
         for output, _item in zip(outputs, batch):
             out_data.append({
                 "sampleId": _item["sampleId"],

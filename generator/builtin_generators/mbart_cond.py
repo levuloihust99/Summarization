@@ -56,7 +56,13 @@ class MBartConditionalGeneratorSummarizer:
             )
         return next_token_logits
     
-    def greedy(self, inputs: Union[Text, List[Text]], max_length: int = 300) -> List[Text]:
+    def greedy(
+        self,
+        inputs: Union[Text, List[Text]],
+        max_length: int = 300,
+        block_n_grams: int = -1,
+        **kwargs
+    ) -> List[Text]:
         inputs = self.tokenizer(
             inputs,
             padding=True,
@@ -78,7 +84,8 @@ class MBartConditionalGeneratorSummarizer:
             decoder_start_token_id=self.model.config.decoder_start_token_id,
             decoder_end_token_id=self.tokenizer.eos_token_id,
             decoder_input_ids=alive_seq,
-            max_length=max_length
+            max_length=max_length,
+            block_n_grams=block_n_grams,
         )
         outputs = [
             self.tokenizer.decode(output, clean_up_tokenization_spaces=False, skip_special_tokens=True)
