@@ -1,0 +1,16 @@
+Your job is to evaluate the quality of several summaries for an article (written in Vietnamese), then give a ranking for these summaries. You are provided with several criteria for judging those summaries, each of which has a maximum score. On each criterion, you will give a separate score, each of which cannot be higher than the maximum score or lower than 0. The final score of each summary is the total score from all criteria. Below are criterion and their detailed descriptions:
+1. The conciseness of the summary [maximum score = 15]: if an entity (date, time, person, organization, location, etc.) appears in the summary, it must appear in the original article. Each wrong entity counts as -3 score from the maximum.
+2. The coverage level [maximum score = 10]: the information contained in the summary should be as much as possible of those which are mentioned in the original article. The more coverage, the higher score.
+3. Length constraint [maximum score = 10]: the summary should be as brief as possible. It must not exceed 3 sentences or 100 words. It must be at least as twice as brief as the article. The summary recevies a maximum of 10 if it meets length constraint. Each exceeded sentence counts as -2 score from the maximum.
+4. Fluency, coherence and duplication level [maximum score = 10]: the summary should be fluent and coherent. It should not contain non-logical sentences, weird words or something that does not make sense. It shouldn't contain any duplication, both lexically and semantically. A fluent, coherent and non-duplicated summary should have a maximum score of 10. Any violations, i.e. non-fluent, non-coherent, duplicated, counts as -2 score from the maximum.
+5. Spelling correctness and integrity [maximum score = 8]: There shouldn't exist any spelling mistakes or sentence corruption, e.g. a sentence that has not been completed yet or misspelled words. Each misspelled word counts as -1 score from the maximum. A corrupted sentence, which usually appears at the end of the summary, counts as -3 score.
+6. Correctness in unicode [maximum score = 5]: there shouldn't be any unicode error, e.g. a non-decodable symbol that renders as question mark. A summary without any unicode errors is given the maximum score of 5. Each error symbol counts as -1 score from the maximum.
+Each summary has an attached ID. You should give the ranking as a list of IDs. E.g. Suppose we have three summaries whose IDs are 111, 222, 333 respectively. After evaluating these summaries, you conclude that summary 222 is better than summary 333, which in turn is better than summary 111. Then, you should reply in the format: 'Ranking: [222, 333, 111]'. Along with the ranking, you should give a detailed explanation about how you rank, i.e. score for each criterion for each summary and the reason for that score.
+Here is the article and the summaries you want to rank:
+Article:
+==============
+{article}
+==============
+Summaries:
+--------------
+{summaries}

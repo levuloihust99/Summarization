@@ -1,17 +1,24 @@
-Your job is to evaluate quality of several summaries for an article (written in Vietnamese), then give a ranking for these summaries. You are provided with several criteria for judging those summaries, each criterion has an importance level. The higher the level is, the more that you should focus on that criteria. The criteria you base on to judge the quality of a summary are:
-1. The conciseness of the summary [importance level = 15]: if an entity (date, time, person, organization, location, etc.) appears in the summary, it must appear in the original article.
-2. The coverage level [importance level = 10]: the information contained in the summary should be as much as possible of those which are mentioned in the original article. Furthermore, when there is length constraint (which is specified later), the information that is ignored in the summary should be less important than the information that is retained in the summary.
-3. Length constraint [importance level = 10]: the summary should be as brief as possible. It must not exceed 3 sentences or 100 words. It must be at least as twice as brief as the article.
-4. Duplication level [importance level = 10]: the summary should not contain any duplication, both lexically and semantically.
-5. Fluency and coherence [importance level = 10]: the summary should be fluent and coherent. It should not contain non-logical sentences, weird words or something that does not make sense.
-6. Spelling correctness and integrity [importance level = 8]: There shouldn't exist any spelling mistakes or sentence corruption, e.g. a sentence that has not been completed yet or has words that does not appear in the Vietnamese vocabulary.
-7. Correctness in unicode [importance level = 5]: there shouldn't be any unicode error, e.g. a non-decodable symbol that renders as question mark.
-Each summary has an attached ID. You should give the ranking as a list of IDs. E.g. Suppose we have three summaries whose IDs are 111, 222, 333 respectively. After evaluating these summaries, you conclude that summary 222 is better than summary 333, which in turn is better than summary 111. Then, you should reply in the format: 'Ranking: [222, 333, 111]'.
-Here is the article and the summaries you want to rank:
+Your task involves assessing the quality of multiple summaries derived from an article written in Vietnamese. For this, certain evaluation criteria will be provided to you, with each stipulating a maximum achievable score. You are expected to assign scores for each criterion, ensuring that the score for any given criterion does not exceed its maximum value nor fall below zero. A summary's final score will be the aggregate of its scores across all criteria. The criteria and their specific details are as follows:
+
+1. Conciseness (Maximum score: 15) – Assess whether every entity (such as dates, people, organizations, locations, etc.) present in the summary also exists in the original article. Incorrect entities will result in a 3-point deduction from the maximum score per entity.
+
+2. Coverage (Maximum score: 10) – This criterion assesses the thoroughness with which the summary reflects the content of the original article. To evaluate coverage, one must consider the inclusion of critical data, important concepts, and central themes that are present in the source material. A summary with greater coverage will contain a well-rounded representation of the original article's intent, purpose, and factual content, effectively conveying the same understanding as the full text. The score for coverage is directly proportional to the completeness of the summary; the more comprehensive the encapsulation of the original article's information, the higher the score awarded. A high-scoring summary will ensure that no major points are omitted, and it will provide a clear and concise distillation of the article's essence, enabling readers to grasp the entirety of the discussed subject without significant loss of context or meaning.
+
+3. Fluency and Coherence (Maximum score: 10) – The summary should be smoothly written and logically structured without containing any odd phrases or incoherent statements. Repetitive content, whether lexical or semantic, should be avoided. A well-written summary receives the full score. Instances of incoherence or duplication lead to a 2-point reduction each.
+
+4. Spelling and Integrity (Maximum score: 10) – There should be no spelling errors or incomplete sentences. Misspelled words will result in a 1-point deduction each, while incomplete sentences will cost 3 points each.
+
+5. Unicode Accuracy (Maximum score: 10) – Ensure that the summary is free of Unicode errors, such as indecipherable symbols that show up as question marks. A summary void of Unicode errors is awarded the full score, whereas each error leads to a 1-point deduction.
+
+When ranking the summaries, please list them in order of quality based on their attached IDs, with the highest quality summary first. For example, if you judge that summary with ID 222 is superior to 333, and 333 is better than 111, your response should be formatted as: 'Ranking: [222, 333, 111]'. Additionally, provide a detailed explanation for each summary's ranking, including the individual scores per criterion and the rationale behind them.
+
+Below is the article along with the summaries for your evaluation:
+
 Article:
 ==============
 {article}
 ==============
+
 Summaries:
 --------------
 {summaries}
