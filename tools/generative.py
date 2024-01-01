@@ -1,4 +1,7 @@
 import openai
+import google.generativeai as genai
+gemini = genai.GenerativeModel("gemini-pro")
+
 from typing import Text, List
 
 
@@ -17,7 +20,7 @@ AVAILABLE_MODELS = [
 ]
 
 
-def get_openai_api_keys(api_key_file: Text) -> List[Text]:
+def get_api_keys(api_key_file: Text) -> List[Text]:
     api_keys = []
     with open(api_key_file, "r") as reader:
         for line in reader:
@@ -57,6 +60,32 @@ async def gemini_generate(prompt: Text, **kwargs):
     Return (Text):
         The completion of the prompt.
     """
+    api_key = kwargs.pop("api_key")
+    genai.configure(api_key=api_key)
+    gen_config = genai.types.GenerationConfig(**kwargs)
+    response = await gemini.generate_content_async(
+        prompt,
+        generation_config=gen_config,
+        safety_settings=[
+            {
+                "category": "HARM_CATEGORY_HARASSMENT",
+                "threshold": "BLOCK_NONE"
+            },
+            {
+                "category": "HARM_CATEGORY_HATE_SPEECH",
+                "threshold": "BLOCK_NONE"
+            },
+            {
+                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                "threshold": "BLOCK_NONE"
+            },
+            {
+                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                "threshold": "BLOCK_NONE"
+            }
+        ]
+    )
+    return response.text
 
 
 async def prompting(prompt: Text, model: Text, **kwargs):

@@ -16,14 +16,14 @@ from libs.utils.mongo_utils import setup_db
 from ..generative import (
     prompting,
     AVAILABLE_MODELS,
-    get_openai_api_keys
+    get_api_keys
 )
 
 logging.basicConfig(level=logging.DEBUG)
 add_color_formater(logging.root)
 logger = logging.getLogger(__name__)
 
-PROMPT_TEMPLATE = """Your job is to select between two summaries of an Vietnamese news article one that is better. Each summary has an ID. You must reply with the ID of the preferred summary. Here are the article and the two summaries:
+PROMPT_TEMPLATE = """Your job is to select between two summaries of an Vietnamese news article one that is better. You should consider several criterion such as accuracy, coverage and coherence during evaluating each summary. Each summary has an ID. You must reply with and only with the ID of the preferred summary. Here are the article and the two summaries:
 
 Article:
 \"\"\"
@@ -122,7 +122,7 @@ async def rank_pairwise(sampleId: Text, article: Text, summaries: List[Dict]):
             eval(k): v for k, v in comparisons.items()
         }
 
-    for x, y in HEURISTIC_ORDER:
+    for idx, (x, y) in enumerate(HEURISTIC_ORDER):
         if x not in node_mapping:
             node_x = Node(name=x, parent=node_mapping["root"])
             node_mapping["root"].children[x] = node_x
@@ -166,8 +166,11 @@ async def rank_pairwise(sampleId: Text, article: Text, summaries: List[Dict]):
         kwargs = {}
         if args.model_name.startswith("gpt-3.5"):
             kwargs["api_key"] = loop.ctx.get_api_key()
-        else:
+        elif args.model_name.startswith("gpt-4"):
             kwargs["api_key"] = loop.ctx.gpt4_api_key
+        else: # gemini
+            kwargs["candidate_count"] = 1
+            kwargs["api_key"] = loop.ctx.get_gemini_api_key()
         output = await prompting(
             prompt=compare_prompt,
             model=args.model_name,
@@ -186,9 +189,10 @@ async def rank_pairwise(sampleId: Text, article: Text, summaries: List[Dict]):
 
         preferred = 1 if x == preferred_generator else -1
         comparisons[(x, y)] = {
-            "prompt": compare_prompt,
+            "preferred": preferred,
+            "model": args.model_name,
             "completion": output,
-            "preferred": preferred
+            "prompt": compare_prompt,
         }
         sample_dir = os.path.join(args.storage_dir, sampleId)
         if not os.path.exists(sample_dir):
@@ -223,7 +227,7 @@ async def launch(args):
 
     if args.model_name.startswith("gpt-3.5"):
         assert args.gpt35_api_key_file
-        api_keys = get_openai_api_keys(args.gpt35_api_key_file)
+        api_keys = get_api_keys(args.gpt35_api_key_file)
         idx = -1
         def get_api_key():
             nonlocal idx
@@ -233,6 +237,15 @@ async def launch(args):
     elif args.model_name.startswith("gpt-4"):
         assert args.gpt4_api_key
         loop.ctx.gpt4_api_key = args.gpt4_api_key
+    else: # gemini-pro
+        assert args.gemini_api_key_file
+        api_keys = get_api_keys(args.gemini_api_key_file)
+        idx = -1
+        def get_api_key():
+            nonlocal idx
+            idx = (idx + 1) % len(api_keys)
+            return api_keys[idx]
+        loop.ctx.get_gemini_api_key = get_api_key
 
     mongo_client = setup_db(
         host=config('MONGO_HOST'),
@@ -244,12 +257,23 @@ async def launch(args):
     loop.ctx.mongo_collection = mongo_client[args.mongo_schema][args.mongo_collection]
     loop.ctx.args = args
 
+    storage_dir = os.path.join(args.storage_dir, args.model_name)
+    args.storage_dir = storage_dir
     if not os.path.exists(args.storage_dir):
         os.makedirs(args.storage_dir)
 
-    cursor = loop.ctx.mongo_collection.find().limit(1)
+    cursor = loop.ctx.mongo_collection.find()
+    progress = tqdm()
+    batch = []
     async for doc in cursor:
-        await process_doc(doc)
+        batch.append(process_doc(doc))
+        if len(batch) == args.concurrent_factor:
+            await asyncio.gather(*batch)
+            progress.update(len(batch))
+            batch = []
+
+    if batch:
+        await asyncio.gather(*batch)
 
 
 def main():
@@ -260,6 +284,8 @@ def main():
     parser.add_argument("--model_name", default="gpt-3.5-turbo", choices=AVAILABLE_MODELS)
     parser.add_argument("--gpt4_api_key", default=config('GPT4_API_KEY', default=None)),
     parser.add_argument("--gpt35_api_key_file", default=config('OPENAI_API_KEY_FILE', default=None))
+    parser.add_argument("--gemini_api_key_file", default=config('GEMINI_API_KEY_FILE', default=None))
+    parser.add_argument("--concurrent_factor", type=int, default=1)
     args = parser.parse_args()
 
     asyncio.run(launch(args))
