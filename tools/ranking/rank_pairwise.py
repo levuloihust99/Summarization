@@ -159,8 +159,8 @@ async def rank_pairwise(sampleId: Text, article: Text, summaries: List[Dict]):
         compare_prompt = PROMPT_TEMPLATE.format(
             article=article,
             id1=x, id2=y,
-            summary1=summary_mapping[x],
-            summary2=summary_mapping[y]
+            summary1=summary_mapping[x]["content"],
+            summary2=summary_mapping[y]["content"]
         )
 
         kwargs = {}
