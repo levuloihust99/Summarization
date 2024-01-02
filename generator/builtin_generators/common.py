@@ -69,7 +69,7 @@ def greedy(
                     prefix = tuple(alive_seq[idx][-(block_n_grams - 1):].tolist())
                 if len(prefix) == 0:
                     continue
-                mask_ids = [_id for _id in trie.get_entities_by_prefix(prefix)]
+                mask_ids = [seq[-1] for seq in trie.get_entities_by_prefix(prefix)]
                 logits[idx, :, mask_ids] = -1e20
 
         next_ids = torch.argmax(logits, dim=-1) # [bsz, 1]
