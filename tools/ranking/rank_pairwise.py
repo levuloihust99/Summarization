@@ -11,7 +11,7 @@ from pathlib import Path
 from decouple import config
 from typing import Text, List, Dict, Optional
 
-from libs.utils.logging import add_color_formater
+from libs.utils.logging import do_setup_logging
 from libs.utils.mongo_utils import setup_db
 from ..generative import (
     prompting,
@@ -19,8 +19,7 @@ from ..generative import (
     get_api_keys
 )
 
-logging.basicConfig(level=logging.DEBUG)
-add_color_formater(logging.root)
+do_setup_logging()
 logger = logging.getLogger(__name__)
 
 PROMPT_TEMPLATE = """Your job is to select between two summaries of an Vietnamese news article one that is better. You should consider several criterion such as accuracy, coverage and coherence during evaluating each summary. Each summary has an ID. You must reply with and only with the ID of the preferred summary. Here are the article and the two summaries:
@@ -171,14 +170,32 @@ async def rank_pairwise(sampleId: Text, article: Text, summaries: List[Dict]):
         else: # gemini
             kwargs["candidate_count"] = 1
             kwargs["api_key"] = loop.ctx.get_gemini_api_key()
-        output = await prompting(
-            prompt=compare_prompt,
-            model=args.model_name,
-            **kwargs
-        )
+        try:
+            output = await prompting(
+                prompt=compare_prompt,
+                model=args.model_name,
+                **kwargs
+            )
+        except Exception as e:
+            logger.error(e)
+            continue
         preferred_generator = parse(output)
         if preferred_generator is None:
-            logger.warning("sampleId {}, compare ({}, {})".format(sampleId, x, y))
+            comparisons[(x, y)] = {
+                "preferred": preferred,
+                "model": args.model_name,
+                "completion": output,
+                "prompt": compare_prompt,
+            }
+            sample_dir = os.path.join(args.storage_dir, sampleId)
+            if not os.path.exists(sample_dir):
+                os.makedirs(sample_dir)
+            with open(os.path.join(sample_dir, "comparisons.json"), "w") as writer:
+                serialized_comparisons = {
+                    str(k): v for k, v in comparisons.items()
+                }
+                json.dump(serialized_comparisons, writer, indent=4, ensure_ascii=False)
+                logger.warning("sampleId {}, compare ({}, {})".format(sampleId, x, y))
             continue
         assert preferred_generator in [x, y]
 
@@ -202,6 +219,7 @@ async def rank_pairwise(sampleId: Text, article: Text, summaries: List[Dict]):
                 str(k): v for k, v in comparisons.items()
             }
             json.dump(serialized_comparisons, writer, indent=4, ensure_ascii=False)
+        await asyncio.sleep(args.time_delay)
 
     try:
         rank = infer_rank(node_mapping["root"])[1:]
@@ -286,6 +304,7 @@ def main():
     parser.add_argument("--gpt35_api_key_file", default=config('OPENAI_API_KEY_FILE', default=None))
     parser.add_argument("--gemini_api_key_file", default=config('GEMINI_API_KEY_FILE', default=None))
     parser.add_argument("--concurrent_factor", type=int, default=1)
+    parser.add_argument("--time_delay", type=int, default=0, help="Time delay for sending request in seconds")
     args = parser.parse_args()
 
     asyncio.run(launch(args))
