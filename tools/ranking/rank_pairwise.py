@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import openai.error
 import asyncio
 import logging
 import argparse
@@ -16,7 +17,8 @@ from libs.utils.mongo_utils import setup_db
 from ..generative import (
     prompting,
     AVAILABLE_MODELS,
-    get_api_keys
+    get_api_keys,
+    GeminiException
 )
 
 do_setup_logging()
@@ -50,6 +52,10 @@ HEURISTIC_ORDER = [
 ]
 
 
+class CyclicDependencyError(Exception):
+    pass
+
+
 class Node:
     def __init__(
         self,
@@ -69,6 +75,8 @@ class Node:
         while node:
             if node is other:
                 return True
+            elif node is self:
+                raise CyclicDependencyError
             node = node.parent
         return False
 
@@ -152,8 +160,12 @@ async def rank_pairwise(sampleId: Text, article: Text, summaries: List[Dict]):
                 node_mapping[other_generator].parent.children.pop(other_generator)
                 node_mapping[other_generator].parent = node_mapping[preferred_generator]
 
-        if node_x.is_smaller(node_y) or node_y.is_smaller(node_x):
-            continue
+        try:
+            if node_x.is_smaller(node_y) or node_y.is_smaller(node_x):
+                continue
+        except CyclicDependencyError:
+            logger.error("Cyclic dependency for sample '{}'".format(sampleId))
+            return
 
         compare_prompt = PROMPT_TEMPLATE.format(
             article=article,
@@ -179,8 +191,10 @@ async def rank_pairwise(sampleId: Text, article: Text, summaries: List[Dict]):
         except Exception as e:
             logger.error(e)
             continue
+
         preferred_generator = parse(output)
         if preferred_generator is None:
+            logger.warning("sampleId {}, compare ({}, {})".format(sampleId, x, y))
             comparisons[(x, y)] = {
                 "preferred": preferred,
                 "model": args.model_name,
@@ -195,7 +209,6 @@ async def rank_pairwise(sampleId: Text, article: Text, summaries: List[Dict]):
                     str(k): v for k, v in comparisons.items()
                 }
                 json.dump(serialized_comparisons, writer, indent=4, ensure_ascii=False)
-                logger.warning("sampleId {}, compare ({}, {})".format(sampleId, x, y))
             continue
         assert preferred_generator in [x, y]
 
@@ -229,14 +242,115 @@ async def rank_pairwise(sampleId: Text, article: Text, summaries: List[Dict]):
         rank_file = os.path.join(sample_dir, "rank.json")
         with open(rank_file, "w") as writer:
             json.dump(rank, writer, indent=4, ensure_ascii=False)
-    except:
-        pass
+    except Exception as e:
+        logger.error(e)
+
+
+async def compare_pairwise(sampleId: Text, article: Text, summaries: List[Dict]):
+    loop = asyncio.get_running_loop()
+    args = loop.ctx.args
+
+    rank_path = os.path.join(args.storage_dir, sampleId, "rank.json")
+    if os.path.exists(rank_path):
+        return
+
+    summary_mapping = {
+        summary["metadata"]["generator"]: summary
+        for summary in summaries
+    }
+    generators = list(summary_mapping.keys())
+
+    def parse(llm_output: Text) -> Text:
+        matches = re.finditer(r"{}".format("|".join(generators)), llm_output)
+        matches = list(matches)
+        if len(matches) != 1:
+            logger.warning("Cannot determine preferred summary. Leave for manually selection.")
+            return None
+        return matches[0].group()
+
+    def save_comparisons():
+        sample_dir = os.path.join(args.storage_dir, sampleId)
+        if not os.path.exists(sample_dir):
+            os.makedirs(sample_dir)
+        with open(os.path.join(sample_dir, "comparisons.json"), "w") as writer:
+            serialized_comparisons = {
+                str(k): v for k, v in comparisons.items()
+            }
+            json.dump(serialized_comparisons, writer, indent=4, ensure_ascii=False)
+
+    comparisons = {}
+    completed_path = os.path.join(args.storage_dir, sampleId, "comparisons.json")
+    if os.path.exists(completed_path):
+        with open(completed_path, 'r') as reader:
+            comparisons = json.load(reader)
+        comparisons = {
+            eval(k): v for k, v in comparisons.items()
+        }
+
+    for idx, (x, y) in enumerate(HEURISTIC_ORDER):
+        if (x, y) in comparisons:
+            continue
+
+        compare_prompt = PROMPT_TEMPLATE.format(
+            article=article,
+            id1=x, id2=y,
+            summary1=summary_mapping[x]["content"],
+            summary2=summary_mapping[y]["content"]
+        )
+
+        kwargs = {}
+        if args.model_name.startswith("gpt-3.5"):
+            kwargs["api_key"] = loop.ctx.get_api_key()
+        elif args.model_name.startswith("gpt-4"):
+            kwargs["api_key"] = loop.ctx.gpt4_api_key
+        else: # gemini
+            kwargs["candidate_count"] = 1
+            kwargs["api_key"] = loop.ctx.get_gemini_api_key()
+        try:
+            output = await prompting(
+                prompt=compare_prompt,
+                model=args.model_name,
+                **kwargs
+            )
+        except GeminiException as e:
+            comparisons[(x, y)] = {
+                "error": str(e.kwargs["wrapped"]),
+                "error_class": e.kwargs["wrapped"].__class__.__qualname__,
+                "model": args.model_name,
+                "prompt": compare_prompt
+            }
+            save_comparisons()
+            continue
+        except openai.error.InvalidRequestError:
+            continue
+
+        preferred_generator = parse(output)
+        if preferred_generator is None:
+            logger.warning("sampleId {}, compare ({}, {})".format(sampleId, x, y))
+            comparisons[(x, y)] = {
+                "preferred": preferred,
+                "model": args.model_name,
+                "completion": output,
+                "prompt": compare_prompt,
+            }
+            save_comparisons()
+            continue
+        assert preferred_generator in [x, y]
+
+        preferred = 1 if x == preferred_generator else -1
+        comparisons[(x, y)] = {
+            "preferred": preferred,
+            "model": args.model_name,
+            "completion": output,
+            "prompt": compare_prompt,
+        }
+        save_comparisons()
 
 
 async def process_doc(doc: Dict):
     loop = asyncio.get_running_loop()
     args = loop.ctx.args
-    await rank_pairwise(sampleId=doc["sampleId"], article=doc["input"], summaries=doc["outputs"])
+    await compare_pairwise(sampleId=doc["sampleId"], article=doc["input"], summaries=doc["outputs"])
 
 
 async def launch(args):
@@ -308,7 +422,6 @@ def main():
     args = parser.parse_args()
 
     asyncio.run(launch(args))
-
 
 if __name__ == "__main__":
     main()

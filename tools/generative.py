@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 import openai
 import google.generativeai as genai
 gemini = genai.GenerativeModel("gemini-pro")
@@ -10,6 +14,7 @@ AVAILABLE_MODELS = [
     "gpt-4-vision-preview",
     "gpt-4",
     "gpt-3.5-turbo-1106",
+    "gpt-3.5-turbo-0125",
     "gpt-3.5-turbo",
     "gpt-3.5-turbo-16k",
     "gpt-3.5-turbo-instruct",
@@ -20,8 +25,10 @@ AVAILABLE_MODELS = [
 ]
 
 
-class GeminiSafetyBlockException(Exception):
-    pass
+class GeminiException(Exception):
+    def __init__(self, *args, **kwargs):
+        super(GeminiException, self).__init__(*args)
+        self.kwargs = kwargs
 
 
 def get_api_keys(api_key_file: Text) -> List[Text]:
@@ -87,29 +94,33 @@ async def gemini_generate(prompt: Text, **kwargs):
     api_key = kwargs.pop("api_key")
     genai.configure(api_key=api_key)
     gen_config = genai.types.GenerationConfig(**kwargs)
-    response = await gemini.generate_content_async(
-        prompt,
-        generation_config=gen_config,
-        safety_settings=[
-            {
-                "category": "HARM_CATEGORY_HARASSMENT",
-                "threshold": "BLOCK_NONE"
-            },
-            {
-                "category": "HARM_CATEGORY_HATE_SPEECH",
-                "threshold": "BLOCK_NONE"
-            },
-            {
-                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                "threshold": "BLOCK_NONE"
-            },
-            {
-                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                "threshold": "BLOCK_NONE"
-            }
-        ]
-    )
-    return response.text
+    try:
+        response = await gemini.generate_content_async(
+            prompt,
+            generation_config=gen_config,
+            safety_settings=[
+                {
+                    "category": "HARM_CATEGORY_HARASSMENT",
+                    "threshold": "BLOCK_NONE"
+                },
+                {
+                    "category": "HARM_CATEGORY_HATE_SPEECH",
+                    "threshold": "BLOCK_NONE"
+                },
+                {
+                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "threshold": "BLOCK_NONE"
+                },
+                {
+                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    "threshold": "BLOCK_NONE"
+                }
+            ]
+        )
+        return response.text
+    except Exception as e:
+        logger.error(e)
+        raise GeminiException(wrapped=e)
 
 
 async def prompting(prompt: Text, model: Text, **kwargs):
