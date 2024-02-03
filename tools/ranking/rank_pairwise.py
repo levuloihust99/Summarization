@@ -421,7 +421,8 @@ async def distributed_compare_pairwise(sampleId: Text, article: Text, summaries:
             )
         except NetworkGeminiException as e:
             comparisons[(x, y)] = {
-                "error": str(e.kwargs["wrapped"]),
+                "error": e.error_msg,
+                "error_type": e.error_type,
                 "model": args.model_name,
                 "prompt": compare_prompt,
                 "type": "distributed"
@@ -462,7 +463,10 @@ async def distributed_compare_pairwise(sampleId: Text, article: Text, summaries:
 async def process_doc(doc: Dict):
     loop = asyncio.get_running_loop()
     args = loop.ctx.args
-    await distributed_compare_pairwise(sampleId=doc["sampleId"], article=doc["input"], summaries=doc["outputs"])
+    if args.network_mode:
+        await distributed_compare_pairwise(sampleId=doc["sampleId"], article=doc["input"], summaries=doc["outputs"])
+    else:
+        await compare_pairwise(sampleId=doc["sampleId"], article=doc["input"], summaries=doc["outputs"])
 
 
 async def launch(args):
@@ -538,6 +542,7 @@ def main():
     parser.add_argument("--concurrent_factor", type=int, default=1)
     parser.add_argument("--time_delay", type=int, default=0, help="Time delay for sending request in seconds")
     parser.add_argument("--worker_pool_file", default="worker_pool.txt")
+    parser.add_argument("--network_mode", action="store_true", default=False)
     args = parser.parse_args()
 
     asyncio.run(launch(args))

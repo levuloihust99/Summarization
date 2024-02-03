@@ -15,6 +15,8 @@ async def before_request_func(request):
 async def after_response_func(request, response, service: Optional[str] = None):
     if service is not None:
         prefix = "[{} service] ".format(service)
+    else:
+        prefix = ""
     logger.info(
         "{}Total processing time: {}".format(
             prefix, datetime.now() - request.ctx.start_time

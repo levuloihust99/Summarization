@@ -37,9 +37,10 @@ class GeminiException(Exception):
 
 
 class NetworkGeminiException(Exception):
-    def __init__(self, *, error_msg: Text, error_class: Text):
+    def __init__(self, *, error_msg: Text, error_class: Optional[Text] = None, error_type: Optional[Text] = None):
         self.error_msg = error_msg
         self.error_class = error_class
+        self.error_type = error_type
 
 
 def get_api_keys(api_key_file: Text) -> List[Text]:
@@ -172,11 +173,13 @@ async def network_gemini_generate(url: Text, prompt: Text, **kwargs):
                 if isinstance(error, dict):
                     error_msg = error.get("error")
                     error_class = error.get("error_class")
+                    error_type = "graceful"
                 else:
                     error_msg = error
                     error_class = None
+                    error_type = "unexpected"
                 logger.error(error_msg)
-                raise NetworkGeminiException(error_msg=error_msg, error_class=error_class)
+                raise NetworkGeminiException(error_msg=error_msg, error_class=error_class, error_type=error_type)
             resp_data = await response.json()
             return resp_data["completion"]
 
