@@ -22,6 +22,6 @@ async def after_response_func(request, response, service: Optional[str] = None):
     )
 
 
-def register_middleware(app: Sanic, service: str = "MAIN"):
+def register_middleware(app: Sanic, service: Optional[str] = None):
     app.register_middleware(before_request_func, "request")
     app.register_middleware(partial(after_response_func, service=service), "response")

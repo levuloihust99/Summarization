@@ -1,6 +1,5 @@
 import logging
 import argparse
-from decouple import config
 
 import sanic
 from sanic import Sanic
