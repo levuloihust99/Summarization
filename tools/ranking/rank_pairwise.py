@@ -18,7 +18,10 @@ from ..generative import (
     prompting,
     AVAILABLE_MODELS,
     get_api_keys,
-    GeminiException
+    GeminiException,
+    network_gemini_generate,
+    NetworkGeminiException,
+    GenWorkerPicker
 )
 
 do_setup_logging()
@@ -328,7 +331,8 @@ async def compare_pairwise(sampleId: Text, article: Text, summaries: List[Dict])
         if preferred_generator is None:
             logger.warning("sampleId {}, compare ({}, {})".format(sampleId, x, y))
             comparisons[(x, y)] = {
-                "preferred": preferred,
+                "preferred": None,
+                "warning": "Cannot determine preferred summary",
                 "model": args.model_name,
                 "completion": output,
                 "prompt": compare_prompt,
@@ -347,10 +351,118 @@ async def compare_pairwise(sampleId: Text, article: Text, summaries: List[Dict])
         save_comparisons()
 
 
+async def distributed_compare_pairwise(sampleId: Text, article: Text, summaries: List[Dict]):
+    loop = asyncio.get_running_loop()
+    args = loop.ctx.args
+
+    rank_path = os.path.join(args.storage_dir, sampleId, "rank.json")
+    if os.path.exists(rank_path):
+        return
+
+    summary_mapping = {
+        summary["metadata"]["generator"]: summary
+        for summary in summaries
+    }
+    generators = list(summary_mapping.keys())
+
+    def parse(llm_output: Text) -> Text:
+        matches = re.finditer(r"{}".format("|".join(generators)), llm_output)
+        matches = list(matches)
+        if len(matches) != 1:
+            logger.warning("Cannot determine preferred summary. Leave for manually selection.")
+            return None
+        return matches[0].group()
+
+    def save_comparisons():
+        sample_dir = os.path.join(args.storage_dir, sampleId)
+        if not os.path.exists(sample_dir):
+            os.makedirs(sample_dir)
+        with open(os.path.join(sample_dir, "comparisons.json"), "w") as writer:
+            serialized_comparisons = {
+                str(k): v for k, v in comparisons.items()
+            }
+            json.dump(serialized_comparisons, writer, indent=4, ensure_ascii=False)
+
+    comparisons = {}
+    completed_path = os.path.join(args.storage_dir, sampleId, "comparisons.json")
+    if os.path.exists(completed_path):
+        with open(completed_path, 'r') as reader:
+            comparisons = json.load(reader)
+        comparisons = {
+            eval(k): v for k, v in comparisons.items()
+        }
+
+    for idx, (x, y) in enumerate(HEURISTIC_ORDER):
+        if (x, y) in comparisons:
+            continue
+
+        compare_prompt = PROMPT_TEMPLATE.format(
+            article=article,
+            id1=x, id2=y,
+            summary1=summary_mapping[x]["content"],
+            summary2=summary_mapping[y]["content"]
+        )
+
+        kwargs = {}
+        if args.model_name.startswith("gpt-3.5"):
+            kwargs["api_key"] = loop.ctx.get_api_key()
+        elif args.model_name.startswith("gpt-4"):
+            kwargs["api_key"] = loop.ctx.gpt4_api_key
+        else: # gemini
+            kwargs["candidate_count"] = 1
+        try:
+            url, api_key = loop.ctx.gen_worker_picker.pick(args.model_name)
+            output = await network_gemini_generate(
+                url=url,
+                prompt=compare_prompt,
+                model=args.model_name,
+                api_key=api_key,
+                **kwargs
+            )
+        except NetworkGeminiException as e:
+            comparisons[(x, y)] = {
+                "error": str(e.kwargs["wrapped"]),
+                "model": args.model_name,
+                "prompt": compare_prompt,
+                "type": "distributed"
+            }
+            if e.error_class:
+                comparisons[(x, y)]["error_class"] = e.error_class
+            save_comparisons()
+            continue
+        except openai.error.InvalidRequestError:
+            continue
+
+        preferred_generator = parse(output)
+        if preferred_generator is None:
+            logger.warning("sampleId {}, compare ({}, {})".format(sampleId, x, y))
+            comparisons[(x, y)] = {
+                "preferred": None,
+                "warning": "Cannot determine preferred summary",
+                "model": args.model_name,
+                "completion": output,
+                "prompt": compare_prompt,
+                "type": "distributed"
+            }
+            save_comparisons()
+            continue
+        assert preferred_generator in [x, y]
+
+        preferred = 1 if x == preferred_generator else -1
+        comparisons[(x, y)] = {
+            "preferred": preferred,
+            "model": args.model_name,
+            "completion": output,
+            "prompt": compare_prompt,
+            "type": "distributed"
+        }
+        save_comparisons()
+
+
 async def process_doc(doc: Dict):
     loop = asyncio.get_running_loop()
     args = loop.ctx.args
-    await compare_pairwise(sampleId=doc["sampleId"], article=doc["input"], summaries=doc["outputs"])
+    await distributed_compare_pairwise(sampleId=doc["sampleId"], article=doc["input"], summaries=doc["outputs"])
 
 
 async def launch(args):
@@ -358,8 +470,8 @@ async def launch(args):
     setattr(loop, "ctx", argparse.Namespace())
 
     if args.model_name.startswith("gpt-3.5"):
-        assert args.gpt35_api_key_file
-        api_keys = get_api_keys(args.gpt35_api_key_file)
+        assert args.openai_api_key_file
+        api_keys = get_api_keys(args.openai_api_key_file)
         idx = -1
         def get_api_key():
             nonlocal idx
@@ -389,6 +501,12 @@ async def launch(args):
     loop.ctx.mongo_collection = mongo_client[args.mongo_schema][args.mongo_collection]
     loop.ctx.args = args
 
+    loop.ctx.gen_worker_picker = GenWorkerPicker(
+        worker_pool_file=args.worker_pool_file,
+        openai_api_key_pool_file=args.openai_api_key_file,
+        gemini_api_key_pool_file=args.gemini_api_key_file
+    )
+
     storage_dir = os.path.join(args.storage_dir, args.model_name)
     args.storage_dir = storage_dir
     if not os.path.exists(args.storage_dir):
@@ -415,10 +533,11 @@ def main():
     parser.add_argument("--storage_dir", default=Path(__file__).parent / "data/pairwise_ranking" / "v1")
     parser.add_argument("--model_name", default="gpt-3.5-turbo", choices=AVAILABLE_MODELS)
     parser.add_argument("--gpt4_api_key", default=config('GPT4_API_KEY', default=None)),
-    parser.add_argument("--gpt35_api_key_file", default=config('OPENAI_API_KEY_FILE', default=None))
+    parser.add_argument("--openai_api_key_file", default=config('OPENAI_API_KEY_FILE', default=None))
     parser.add_argument("--gemini_api_key_file", default=config('GEMINI_API_KEY_FILE', default=None))
     parser.add_argument("--concurrent_factor", type=int, default=1)
     parser.add_argument("--time_delay", type=int, default=0, help="Time delay for sending request in seconds")
+    parser.add_argument("--worker_pool_file", default="worker_pool.txt")
     args = parser.parse_args()
 
     asyncio.run(launch(args))
