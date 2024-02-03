@@ -42,7 +42,7 @@ async def gemini_pro_handler(request: Request):
         output = await gemini_generate(prompt=prompt, api_key=api_key, **gen_kwargs)
         return sanic.json({"completion": output})
     except GeminiException as e:
-        return sanic.json({"error": str(e.kwargs["wrapped"]), "error_class": e.kwargs["wrapped"].__class__.__qualname__})
+        return sanic.json({"error": str(e.kwargs["wrapped"]), "error_class": e.kwargs["wrapped"].__class__.__qualname__}, status=500)
 
 
 def main():
