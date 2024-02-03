@@ -1,4 +1,4 @@
-torch >= 1.12
+torch >= 1.12, < 2
 transformers >= 4.34, < 5
 sentencepiece >= 0.1.99, < 1
 datasets >= 2.13.1, < 3

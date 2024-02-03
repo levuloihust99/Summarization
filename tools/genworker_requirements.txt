@@ -1,0 +1,5 @@
+python-decouple >= 3.8, < 4
+openai < 1
+google-generativeai >= 0.3.2, < 1
+sanic >= 23.3.0, < 24
+Sanic-Cors >= 2.2.0, < 3
