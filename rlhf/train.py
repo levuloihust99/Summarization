@@ -20,7 +20,7 @@ from trl import (
     create_reference_model
 )
 
-from libs.utils.logging import add_color_formater
+from libs.utils.logging import add_color_formatter
 from libs.data_helpers.bytedataset import ByteDataset
 from libs.utils.seeding import seed_everything
 from rlhf.arguments import (
@@ -36,7 +36,7 @@ from rlhf.reward import Rouge1F1Reward, SentenceEmbeddingSimilarityReward
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-add_color_formater(logging.root)
+add_color_formatter(logging.root)
 
 
 def get_xsum_args():
@@ -160,7 +160,7 @@ def main():
         batch_size=args.batch_size,
         log_with="tensorboard",
         accelerator_kwargs={
-            "logging_dir": args.logging_dir
+            "project_dir": args.logging_dir
         }
     )
     ppo_trainer = PPOTrainer(ppo_config, policy, sft_model, tokenizer)
