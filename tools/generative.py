@@ -1,4 +1,5 @@
 import json
+import random
 import aiohttp
 import logging
 from urllib.parse import urljoin
@@ -225,6 +226,7 @@ class GenWorkerPicker:
         self.openai_api_key_pool = None
         self.openai_worker_idx = -1
         self.openai_worker_api_key_idx_tracker = {}
+        self.openai_api_key_pool_for_worker = {}
         if openai_api_key_pool_file:
             openai_api_key_pool = []
             with open(openai_api_key_pool_file, "r") as reader:
@@ -235,12 +237,17 @@ class GenWorkerPicker:
             if not openai_api_key_pool:
                 raise Exception("Empty OpenAI api key pool.")
             self.openai_api_key_pool = openai_api_key_pool
+
             for worker in self.worker_pool:
                 self.openai_worker_api_key_idx_tracker[worker] = -1
+                openai_api_key_pool = self.openai_api_key_pool[:]
+                random.shuffle(openai_api_key_pool)
+                self.openai_api_key_pool_for_worker[worker] = openai_api_key_pool
 
         self.gemini_api_key_pool = None
         self.gemini_worker_idx = -1
         self.gemini_worker_api_key_idx_tracker = {}
+        self.gemini_api_key_pool_for_worker = {}
         if gemini_api_key_pool_file:
             gemini_api_key_pool = []
             with open(gemini_api_key_pool_file, "r") as reader:
@@ -253,6 +260,9 @@ class GenWorkerPicker:
             self.gemini_api_key_pool = gemini_api_key_pool
             for worker in self.worker_pool:
                 self.gemini_worker_api_key_idx_tracker[worker] = -1
+                gemini_api_key_pool = self.gemini_api_key_pool[:]
+                random.shuffle(gemini_api_key_pool)
+                self.gemini_api_key_pool_for_worker[worker] = gemini_api_key_pool
 
     def pick(self, model_name: Literal['gemini-pro', 'openai']):
         if model_name == "gemini-pro":
@@ -260,12 +270,12 @@ class GenWorkerPicker:
             gemini_worker = self.worker_pool[self.gemini_worker_idx]
             self.gemini_worker_api_key_idx_tracker[gemini_worker] = \
                 (self.gemini_worker_api_key_idx_tracker[gemini_worker] + 1) % len(self.gemini_api_key_pool)
-            api_key = self.gemini_api_key_pool[self.gemini_worker_api_key_idx_tracker[gemini_worker]]
+            api_key = self.gemini_api_key_pool_for_worker[gemini_worker][self.gemini_worker_api_key_idx_tracker[gemini_worker]]
             return urljoin(gemini_worker, self.GEMINI_ENDPOINT), api_key
         else:
             self.openai_worker_idx = (self.openai_worker_idx + 1) % len(self.worker_pool)
             openai_worker = self.worker_pool[self.openai_worker_idx]
             self.openai_worker_api_key_idx_tracker[openai_worker] = \
                 (self.openai_worker_api_key_idx_tracker[openai_worker] + 1) % len(self.openai_api_key_pool)
-            api_key = self.openai_api_key_pool[self.openai_worker_api_key_idx_tracker[openai_worker]]
+            api_key = self.openai_api_key_pool_for_worker[openai_worker][self.openai_worker_api_key_idx_tracker[openai_worker]]
             return urljoin(openai_worker, self.OPENAI_ENDPOINT), api_key

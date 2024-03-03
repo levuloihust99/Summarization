@@ -5,6 +5,7 @@ import openai.error
 import asyncio
 import logging
 import argparse
+import traceback
 import motor.motor_asyncio
 
 from tqdm import tqdm
@@ -326,6 +327,10 @@ async def compare_pairwise(sampleId: Text, article: Text, summaries: List[Dict])
             continue
         except openai.error.InvalidRequestError:
             continue
+        except Exception as e:
+            logger.error(traceback.format_exc())
+            logger.warning(kwargs)
+            raise
 
         preferred_generator = parse(output)
         if preferred_generator is None:
