@@ -14,7 +14,7 @@ that maximum size of `data.pkl` is about 2^48 bytes = 64 TiB.
 
 import os
 import pickle
-from typing import Text
+from typing import Text, Any
 
 from torch.utils.data import Dataset
 
@@ -23,18 +23,18 @@ class ByteDataset(Dataset):
     def __init__(
         self,
         data_path: Text,
-        idx_record_size: int,
+        idx_record_size: int = 6,
         transform=None
     ):
         self.data_path = data_path
-        self.idx_reader = open(os.path.join(data_path, "idxs.pkl"), "rb")
-        self.data_reader = open(os.path.join(data_path, "data.pkl"), "rb")
+        self.idx_file = open(os.path.join(data_path, "idxs.pkl"), "rb+")
+        self.data_file = open(os.path.join(data_path, "data.pkl"), "rb+")
         self.idx_record_size = idx_record_size
         self.transform = transform
     
     def __len__(self):
-        self.idx_reader.seek(0, 0)
-        dataset_size = self.idx_reader.read(4)
+        self.idx_file.seek(0, 0)
+        dataset_size = self.idx_file.read(4)
         dataset_size = int.from_bytes(dataset_size, byteorder='big', signed=False)
         return dataset_size
     
@@ -50,16 +50,17 @@ class ByteDataset(Dataset):
             raise StopIteration
 
         # get position of record
-        self.idx_reader.seek(idx * self.idx_record_size + 4, 0)
-        position = self.idx_reader.read(self.idx_record_size)
+        self.idx_file.seek(idx * self.idx_record_size + 4, 0)
+        position = self.idx_file.read(self.idx_record_size)
         position = int.from_bytes(position, 'big', signed=False)
 
         # get record
-        self.data_reader.seek(position, 0)
+        self.data_file.seek(position, 0)
         try:
-            record = pickle.load(self.data_reader)
+            record = pickle.load(self.data_file)
         except Exception as e:
             print("Idx: {} - Position: {}".format(idx, position))
+            raise
 
         # transform
         if self.transform:
@@ -67,5 +68,16 @@ class ByteDataset(Dataset):
         return record
 
     def __del__(self):
-        self.idx_reader.close()
-        self.data_reader.close()
+        self.idx_file.close()
+        self.data_file.close()
+
+    def add_item(self, item: Any):
+        self.idx_file.seek(0, 2)
+        self.data_file.seek(0, 2)
+        self.idx_file.write(self.data_file.tell().to_bytes(6, 'big', signed=False))
+        pickle.dump(item, self.data_file)
+        self.idx_file.seek(0, 0)
+        num_records = int.from_bytes(self.idx_file.read(4), byteorder='big', signed=False)
+        num_records += 1
+        self.idx_file.seek(0, 0)
+        self.idx_file.write(num_records.to_bytes(4, 'big', signed=False))

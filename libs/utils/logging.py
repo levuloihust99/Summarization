@@ -6,7 +6,6 @@ YELLOW = "\x1b[38;5;3m"
 GRAY = "\x1b[38;5;8m"
 BOLD_GREEN = "\x1b[38;5;2;1m"
 GREEN = "\x1b[38;5;2m"
-WHITE = "\x1b[38;5;15m"
 RESET_CODE = "\x1b[0m"
 
 
@@ -18,7 +17,7 @@ class ColorFormatter(logging.Formatter):
     )
     INFO_FORMATTER = (
         f"{GREEN}%(asctime)s - %(name)s [%(process)s]{RESET_CODE} "
-        f"[{WHITE}%(levelname)s{RESET_CODE}] {WHITE}%(message)s{RESET_CODE}"
+        f"[{BLUE}%(levelname)s{RESET_CODE}] {BLUE}%(message)s{RESET_CODE}"
     )
     WARNING_FORMATTER = (
         f"{GREEN}%(asctime)s - %(name)s [%(process)s]{RESET_CODE} "
@@ -52,6 +51,26 @@ def add_color_formatter(logger: logging.Logger):
         handler.setFormatter(ColorFormatter())
 
 
-def do_setup_logging():
-    logging.basicConfig(level=logging.INFO)
+def do_setup_logging(level=None):
+    if level is not None:
+        if isinstance(level, str):
+            level = get_log_level(level)
+        logging.basicConfig(level=level)
     add_color_formatter(logging.root)
+
+
+def get_log_level(level: str):
+    log_level = None
+    if level.lower() == "info":
+        log_level = logging.INFO
+    elif level.lower() == "debug":
+        log_level = logging.DEBUG
+    elif level.lower() == "warning":
+        log_level = logging.WARNING
+    elif level.lower() == "error":
+        log_level = logging.ERROR
+    elif level.lower() == "critical":
+        log_level = logging.CRITICAL
+    else:
+        log_level = logging.NOTSET
+    return log_level

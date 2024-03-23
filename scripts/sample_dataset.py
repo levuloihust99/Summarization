@@ -7,42 +7,20 @@ import argparse
 from tqdm import tqdm
 
 from libs.data_helpers.bytedataset import ByteDataset
-
-
-def write_bytedataset(
-    output_path,
-    output_data
-):
-    idx_writer = open(os.path.join(output_path, "idxs.pkl"), "wb")
-    dataset_size_place_holder = (0).to_bytes(4, 'big', signed=False)
-    idx_writer.write(dataset_size_place_holder)
-
-    data_writer = open(os.path.join(output_path, "data.pkl"), "wb")
-
-    num_records = 0
-    for item in tqdm(output_data):
-        idx_writer.write(data_writer.tell().to_bytes(6, 'big', signed=False))
-        pickle.dump(item, data_writer)
-        num_records += 1
-        
-    data_writer.close()
-        
-    idx_writer.seek(0, 0)
-    idx_writer.write(num_records.to_bytes(4, 'big', signed=False))
-    idx_writer.close()
+from libs.data_helpers.utils import create_bytedataset
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=12345)
-    parser.add_argument("--input-path", "-i", required=True,
+    parser.add_argument("--input_path", "-i", required=True,
                         help="Path to the input bytedataset.")
-    parser.add_argument("--output-path", "-o", required=True,
+    parser.add_argument("--output_path", "-o", required=True,
                         help="Path to the output dataset.")
-    parser.add_argument("--output-format",
+    parser.add_argument("--output_format",
                         choices=["jsonlines", "bytedataset", "both"],
                         default="jsonlines")
-    parser.add_argument("--sample-size", type=int, default=1000)
+    parser.add_argument("--sample_size", type=int, default=1000)
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -70,9 +48,9 @@ def main():
     if output_bytedataset:
         if not os.path.exists(args.output_path):
             os.makedirs(args.output_path)
-        write_bytedataset(
-            output_path=args.output_path,
-            output_data=out_data
+        create_bytedataset(
+            output_dir=args.output_path,
+            data=out_data
         )
 
 

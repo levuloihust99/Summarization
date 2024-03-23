@@ -1,10 +1,18 @@
+"""Code in this module is borrowed from `rouge-metric` library, i.e. rouge_metric/py_rouge.py."""
+
+import re
+import string
 import itertools
 import collections
+from nltk.stem import porter
 from typing import List, Tuple, Counter, Dict, Union, Callable
 
 NGramsType = Counter[Tuple[str]]
 ScoreType = Dict[str, float]
 RougeType = Dict[str, Dict[str, float]]
+
+stemmer = porter.PorterStemmer()
+punc_patt = re.compile(f"[{re.escape(string.punctuation)}]")
 
 try:
     from math import isclose
@@ -122,3 +130,20 @@ def _rouge_n_sentence_level(hyp, ref, n):
     match_ngrams = _intersect_ngrams(hyp_ngrams, ref_ngrams)
     return _Match(_count_ngrams(match_ngrams), _count_ngrams(hyp_ngrams),
                   _count_ngrams(ref_ngrams))
+
+
+def rouge_n_sentence_level(hyp: str, ref: str, ns: List[int] = [1], use_stemmer: bool = False) -> _Match:
+    hyp = punc_patt.sub(" ", hyp)
+    ref = punc_patt.sub(" ", ref)
+    hyp_tokens = hyp.lower().split()
+    ref_tokens = ref.lower().split()
+
+    if use_stemmer:
+        hyp_tokens = [stemmer.stem(tok) for tok in hyp_tokens]
+        ref_tokens = [stemmer.stem(tok) for tok in ref_tokens]
+
+    score = {}
+    for n in ns:
+        score[f"rouge{n}"] = _rouge_n_sentence_level(hyp_tokens, ref_tokens, n).to_score(alpha=0.5)
+    
+    return score
