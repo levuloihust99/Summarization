@@ -115,10 +115,11 @@ class RLHFTrainer:
                 model=self.ppo_trainer.accelerator.unwrap_model(
                     self.ppo_trainer.model
                 ).pretrained_model,
-                dataloader=sample_dataloader,
-                generation_kwargs=eval_generation_kwargs,
+                dataloader=self.eval_dataloader,
+                tokenizer=self.tokenizer,
                 input_name=self.config.input_name,
                 output_name=self.config.output_name,
+                generation_kwargs=eval_generation_kwargs,
                 eval_mode=self.config.eval_mode,
                 reward_model=self.reward_model if self.config.eval_mode == "reward" else None,
             ) # change torch RNG state
