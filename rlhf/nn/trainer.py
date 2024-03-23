@@ -218,9 +218,10 @@ class RLHFTrainer:
                     self.log_stats(train_stats)
                     self.log_batch(batch_to_log)
                     self.trl_log_stats(
-                        train_stats,
-                        batch_to_log,
-                        rewards,
+                        current_step=global_step + 1,
+                        stats=train_stats,
+                        batch=batch_to_log,
+                        rewards=rewards,
                         columns_to_log=list(batch_to_log.keys()),
                     )
 
@@ -383,6 +384,7 @@ class RLHFTrainer:
 
     def trl_log_stats(
         self,
+        current_step: int,
         stats: dict,
         batch: dict,
         rewards: List[torch.FloatTensor],
@@ -448,9 +450,7 @@ class RLHFTrainer:
             logs["env/reward_dist"] = rewards.cpu().numpy()
 
             # update the current step
-            ppo_trainer.current_step += 1
-
             ppo_trainer.accelerator.log(
                 logs,
-                step=ppo_trainer.current_step,
+                step=current_step,
             )
