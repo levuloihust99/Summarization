@@ -106,6 +106,20 @@ class RLHFTrainer:
                 self.reward_model.total_reward = self.training_state.reward_state.total_reward
                 self.reward_model.n_samples = self.training_state.reward_state.n_samples
 
+        # past training state
+        best_metric = float("-inf")
+        best_checkpoint = None
+        trained_epochs = 0
+        data_step = 0
+        global_step = 0
+        if self.training_state:
+            best_metric = self.training_state.best_metric
+            best_checkpoint = self.training_state.best_checkpoint
+            trained_epochs = self.training_state.epoch
+            data_step = self.training_state.data_step
+            global_step = self.training_state.global_step
+        self.ppo_trainer.current_step = global_step
+
         if (
             self.config.do_eval
             and self.config.eval_on_first_step
@@ -124,20 +138,6 @@ class RLHFTrainer:
                 reward_model=self.reward_model if self.config.eval_mode == "reward" else None,
             ) # change torch RNG state
             self.ppo_trainer.accelerator.log(eval_stats, step=global_step)
-
-        # past training state
-        best_metric = float("-inf")
-        best_checkpoint = None
-        trained_epochs = 0
-        data_step = 0
-        global_step = 0
-        if self.training_state:
-            best_metric = self.training_state.best_metric
-            best_checkpoint = self.training_state.best_checkpoint
-            trained_epochs = self.training_state.epoch
-            data_step = self.training_state.data_step
-            global_step = self.training_state.global_step
-        self.ppo_trainer.current_step = global_step
 
         total_steps = len(self.train_dataloader) * self.config.num_train_epochs
         progress_bar = tqdm(desc="Step", total=total_steps, initial=global_step)
