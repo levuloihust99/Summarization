@@ -9,7 +9,7 @@ from transformers import AutoModel, AutoTokenizer
 
 from .base import RewardModel
 from rlhf.nn.device import device_manager
-from libs.utils.rouge_calculator import _rouge_n_sentence_level
+from libs.utils.rouge_calculator import rouge_n_sentence_level
 
 logger = logging.getLogger(__name__)
 punc_patt = re.compile(f"[{re.escape(string.punctuation)}]")
@@ -24,14 +24,8 @@ class Rouge1F1Reward(RewardModel):
     def _cal_reward(self, doc: str, hyp: str, ref: str, *args, **kwargs):
         """Calculate Rouge-1 F1-score between the hypothesis and the reference summaries."""
 
-        hyp = remove_punctuation(hyp)
-        ref = remove_punctuation(ref)
-        hyp_tokens = hyp.lower().split()
-        ref_tokens = ref.lower().split()
-        score = _rouge_n_sentence_level(hyp_tokens, ref_tokens, 1).to_score(alpha=0.5)
-        reward = score["f"]
-        self.n_samples += 1
-        self.total_reward += reward
+        score = rouge_n_sentence_level(hyp=hyp, ref=ref, ns=[1])
+        return score["rouge1"]["f"]
 
     def get_avg_reward(self):
         if self.n_samples == 0:
