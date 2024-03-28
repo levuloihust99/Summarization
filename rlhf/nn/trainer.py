@@ -135,7 +135,7 @@ class RLHFTrainer:
                 output_name=self.config.output_name,
                 generation_kwargs=eval_generation_kwargs,
                 eval_mode=self.config.eval_mode,
-                reward_model=self.reward_model if self.config.eval_mode == "reward" else None,
+                reward_model=self.reward_model,
             ) # change torch RNG state
             self.ppo_trainer.accelerator.log(eval_stats, step=global_step)
 
