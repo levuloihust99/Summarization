@@ -8,23 +8,39 @@ from libs.text_processing.unicode_util import Zs_category
 
 def latex_escape(text: Text):
     out = []
-    for ch in text:
-        if ch == "\\":
-            out.append("\\textbackslash")
-        elif ch == "~":
-            out.append("\\textasciitilde")
-        elif ch == "^":
-            out.append("\\textasciicircum")
-        elif ch in {
-            "%", "$", "&", "#", "^", "_", "}", "{"
-        }:
-            out.append("\\{}".format(ch))
-        elif ch in Zs_category:
-            out.append(" ")
-        elif ch == "\u200b":
-            pass
+    keep_original = False
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if not keep_original:
+            if text[i : i + 7] == r"<latex>":
+                keep_original = True
+                i += 7
+                continue
+            elif ch == "\\":
+                out.append("\\textbackslash")
+            elif ch == "~":
+                out.append("\\textasciitilde")
+            elif ch == "^":
+                out.append("\\textasciicircum")
+            elif ch in {
+                "%", "$", "&", "#", "^", "_", "}", "{"
+            }:
+                out.append("\\{}".format(ch))
+            elif ch in Zs_category:
+                out.append(" ")
+            elif ch == "\u200b":
+                pass
+            else:
+                out.append(ch)
+            i += 1
         else:
-            out.append(ch)
+            j = i
+            while text[i : i + 8] != r"</latex>" and i < len(text):
+                i += 1
+            out.append(text[j:i])
+            i += 8
+            keep_original = False
     return "".join(out)
 
 
@@ -59,10 +75,14 @@ def main():
 
         content = ""
         if not args.add_order: 
-            header_latex = " & ".join([r"\multicolumn{{1}}{{P{{-2\tabcolsep-.6pt}}}}{{\textbf{{{}}}}}"] * n_columns)
+            header_latex = " & ".join([r"\multicolumn{{1}}{{P{{%s\linewidth-2\tabcolsep-.6pt}}}}{{\textbf{{{}}}}}"] * n_columns)
         else:
-            header_latex = " & ".join([r"\textbf{{{}}}"] + [r"\multicolumn{{1}}{{P{{-2\tabcolsep-.6pt}}}}{{\textbf{{{}}}}}"] * (n_columns - 1))
+            header_latex = " & ".join([r"\textbf{{{}}}"] + [r"\multicolumn{{1}}{{P{{%s\linewidth-2\tabcolsep-.6pt}}}}{{\textbf{{{}}}}}"] * (n_columns - 1))
         header_latex = header_latex.format(*header)
+        if not args.add_order:
+            header_latex = header_latex % tuple(args.layout)
+        else:
+            header_latex = header_latex % tuple(args.layout[1:])
         header_latex = "\\rowcolor{light-gray}" + header_latex
         content += header_latex + "\\\\\n"
         for row in csv_reader:
