@@ -239,7 +239,7 @@ class RLHFTrainer:
                             input_name=self.config.input_name,
                             generation_kwargs=eval_generation_kwargs,
                             eval_mode=self.config.eval_mode,
-                            reward_model=self.reward_model if self.config.eval_mode == "reward" else None,
+                            reward_model=self.reward_model,
                         )
                         self.ppo_trainer.accelerator.log(eval_stats, step=global_step + 1)
 
