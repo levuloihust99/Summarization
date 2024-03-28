@@ -52,16 +52,16 @@ def main():
         assert len(args.layout) == n_columns
 
         if not args.add_order:
-            layout_latex = "p{{{}\linewidth}}" * n_columns
+            layout_latex = r"p{{{}\linewidth-2\tabcolsep-.6pt}}" * n_columns
         else:
-            layout_latex = "P{{{}\linewidth}}" + "p{{{}\linewidth}}" * (n_columns - 1)
+            layout_latex = r"P{{{}\linewidth-2\tabcolsep-.6pt}}" + r"p{{{}\linewidth-2\tabcolsep-.6pt}}" * (n_columns - 1)
         layout_latex = layout_latex.format(*args.layout)
 
         content = ""
         if not args.add_order: 
-            header_latex = " & ".join([r"\multicolumn{{1}}{{c}}{{\textbf{{{}}}}}"] * n_columns)
+            header_latex = " & ".join([r"\multicolumn{{1}}{{P{{-2\tabcolsep-.6pt}}}}{{\textbf{{{}}}}}"] * n_columns)
         else:
-            header_latex = " & ".join([r"\textbf{{{}}}"] + [r"\multicolumn{{1}}{{c}}{{\textbf{{{}}}}}"] * (n_columns - 1))
+            header_latex = " & ".join([r"\textbf{{{}}}"] + [r"\multicolumn{{1}}{{P{{-2\tabcolsep-.6pt}}}}{{\textbf{{{}}}}}"] * (n_columns - 1))
         header_latex = header_latex.format(*header)
         header_latex = "\\rowcolor{light-gray}" + header_latex
         content += header_latex + "\\\\\n"
