@@ -17,7 +17,7 @@ def add_training_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("--learning_rate", type=float)
     parser.add_argument("--num_train_epochs", type=int)
     parser.add_argument("--resume_from_checkpoint")
-    parser.add_argument("--eval_mode", choices=["reward", "metric"])
+    parser.add_argument("--eval_mode", choices=["reward", "metric", "all"])
 
 
 def add_tokenizer_arguments(parser: argparse.ArgumentParser):

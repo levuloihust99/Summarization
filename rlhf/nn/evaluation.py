@@ -66,7 +66,7 @@ def evaluate_generator(
         score = cal_rouge(hyp, ref, [1, 2])
         scores.append(score)
 
-    if eval_mode == "metric":
+    if eval_mode in {"metric", "all"}:
         rouge1_precisions = []
         rouge1_recalls = []
         rouge2_precisions = []
@@ -85,7 +85,7 @@ def evaluate_generator(
         avg_rouge2_r = sum(rouge2_recalls) / L
         avg_rouge2_f1 = _f_score(avg_rouge2_p, avg_rouge2_r, alpha=0.5)
 
-        return {
+        metrics = {
             "eval/rouge1-precision": avg_rouge1_p,
             "eval/rouge1-recall": avg_rouge1_r,
             "eval/rouge1-f1": avg_rouge1_f1,
@@ -93,11 +93,17 @@ def evaluate_generator(
             "eval/rouge2-recall": avg_rouge2_r,
             "eval/rouge2-f1": avg_rouge2_f1
         }
+        if eval_mode == "metric":
+            return metrics
 
     rewards = []
     for doc, hyp, ref in zip(documents, hypotheses, references):
         r = reward_model.cal_reward(doc=doc, hyp=hyp, ref=ref, training=False)
         rewards.append(r)
-    return {
+    eval_reward = {
         "eval/reward": sum(rewards) / len(rewards)
     }
+
+    if eval_mode == "reward":
+        return eval_reward
+    return {**metrics, **eval_reward}
