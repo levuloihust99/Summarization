@@ -76,14 +76,16 @@ def upload(file_path: str, parent_id: str):
     max_num_width = len(str(count))
     counter_prefix_template = "#File {:0%d}/{}" % max_num_width
     drive_api_file_endpoint = urljoin(DRIVE_API_BASE_URL, "files")
+    iterating_status = ""
 
     with httpx.Client() as client:
         for i, f in enumerate(sequence):
             counter_prefix = counter_prefix_template.format(i + 1, count)
+            flush_string = "\r" + " " * len(iterating_status) + "\r"
             iterating_status = "{}: {}".format(
                 counter_prefix, format_print_path(f, max_line_len=150)
             )
-            print(iterating_status, end="")
+            print(flush_string + iterating_status, end="")
             f_dir = os.path.dirname(f)
             _parent = id_tracker.get(f_dir, parent_id)
             if os.path.isfile(f):
@@ -156,13 +158,13 @@ def upload(file_path: str, parent_id: str):
                             if not match:
                                 raise Exception("Cannot determine bytes range")
                             bytes_sent = int(match.group("last_byte")) + 1
-                            print("\r" + " " * len(iterating_status) + "\r", end="")
+                            flush_string = "\r" + " " * len(iterating_status) + "\r"
                             iterating_status = "{} ({}): {}".format(
                                 counter_prefix,
                                 "{}/{}".format(bytes_sent, file_size),
                                 format_print_path(f),
                             )
-                            print(iterating_status, end="")
+                            print(flush_string + iterating_status, end="")
                         else:
                             raise Exception(resp.content.decode())
             else:
@@ -174,8 +176,8 @@ def upload(file_path: str, parent_id: str):
                 uploaded_folder = service.files().create(body=file_metadata, fields="id").execute()
                 id_tracker[f] = uploaded_folder.get("id")
 
-            if i < len(sequence) - 1:
-                print("\r" + " " * len(iterating_status) + "\r", end="")
+        # end loop, print newline
+        print()
 
 
 def main():
