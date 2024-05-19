@@ -26,7 +26,7 @@ def evaluate_generator(
     input_name,
     output_name,
     generation_kwargs,
-    eval_mode: Literal["metric", "reward"] = "metric",
+    eval_mode: Literal["metric", "reward", "all"] = "all",
     reward_model: Optional[RewardModel] = None,
 ):
     model.eval()
