@@ -18,8 +18,8 @@ def get_collate_fn(
     decoder_start_token_id,
     input_transform: Optional[Callable] = None,
     output_transform: Optional[Callable] = None,
-    max_input_len: int = None,
-    max_output_len: int = None,
+    max_input_len: Optional[int] = None,
+    max_output_len: Optional[int] = None,
     input_name: Text = "prompt",
     output_name: Text = "completion",
 ):
