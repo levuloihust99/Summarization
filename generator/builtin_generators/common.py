@@ -138,7 +138,7 @@ def noninfluent_sampler(
                 torch.tensor(
                     [0] * (topk_min - 1) + [1] * (topk_max - topk_min + 1),
                     dtype=torch.float,
-                ),
+                ).to(logits.device),
                 dims=(bsz, 1)
             ),
             num_samples=1
