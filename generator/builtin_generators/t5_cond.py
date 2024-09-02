@@ -7,8 +7,15 @@ from .common import greedy
 
 
 class T5ConditionalGeneratorSummarizer:
-    def __init__(self, model_path, tokenizer_path=None):
-        device = torch.device('cuda') if torch.cuda.is_available() else torch.device("cpu")
+    def __init__(
+        self,
+        model_path,
+        tokenizer_path: Optional[Text] = None,
+        max_input_len: Optional[int] = None,
+    ):
+        device = (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        )
         self.device = device
         self.model = T5ForConditionalGeneration.from_pretrained(model_path)
         self.model.to(device)
@@ -17,7 +24,8 @@ class T5ConditionalGeneratorSummarizer:
             self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         else:
             self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-    
+        self.max_input_len = max_input_len
+
     def forward(
         self,
         tracker: Dict[Text, Any],
@@ -67,7 +75,7 @@ class T5ConditionalGeneratorSummarizer:
                 encoder_attention_mask=encoder_attention_mask
             )
         return next_token_logits
-    
+
     def greedy(
         self,
         inputs: Union[Text, List[Text]],
@@ -75,7 +83,12 @@ class T5ConditionalGeneratorSummarizer:
         block_n_grams: int = -1,
         **kwargs
     ) -> List[Text]:
-        inputs = self.tokenizer(inputs, padding=True, return_tensors="pt")
+        kwargs = (
+            {"truncation": True, "max_length": self.max_input_len}
+            if self.max_input_len
+            else {}
+        )
+        inputs = self.tokenizer(inputs, padding=True, return_tensors="pt", **kwargs)
         batch_size = inputs.input_ids.size(0)
         alive_seq = torch.full(
             [batch_size, 1],

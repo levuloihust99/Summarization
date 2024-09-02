@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--max_length", type=int, default=150)
     parser.add_argument("--type", default="t5_cond")
     parser.add_argument("--tokenizer_path", default=None)
+    parser.add_argument("--max_input_len", type=int, default=2048)
     parser.add_argument("--model_path", default="VietAI/vit5-base-vietnews-summarization")
     parser.add_argument("--input_key", default="input")
     parser.add_argument("--output_key", default="output")
@@ -37,7 +38,7 @@ def main():
 
     data = load_data(args.input_path)
     model_class = resolve_summarizer_class(args.type)
-    summarizer = model_class(args.model_path, args.tokenizer_path)
+    summarizer = model_class(args.model_path, args.tokenizer_path, args.max_input_len)
 
     kwargs = {}
     if args.noninfluent_sampling is True:

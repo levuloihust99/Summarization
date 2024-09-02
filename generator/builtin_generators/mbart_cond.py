@@ -7,8 +7,15 @@ from .common import greedy
 
 
 class MBartConditionalGeneratorSummarizer:
-    def __init__(self, model_path, tokenizer_path=None):
-        device = torch.device('cuda') if torch.cuda.is_available() else torch.device("cpu")
+    def __init__(
+        self,
+        model_path,
+        tokenizer_path: Optional[Text] = None,
+        max_input_len: Optional[int] = None,
+    ):
+        device = (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        )
         self.device = device
         self.model = MBartForConditionalGeneration.from_pretrained(model_path)
         self.model.to(device)
@@ -17,7 +24,8 @@ class MBartConditionalGeneratorSummarizer:
             self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         else:
             self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-    
+        self.max_input_len = max_input_len
+
     def forward(
         self,
         tracker: Dict[Text, Any],
@@ -58,7 +66,7 @@ class MBartConditionalGeneratorSummarizer:
                 encoder_attention_mask=encoder_attention_mask
             )
         return next_token_logits
-    
+
     def greedy(
         self,
         inputs: Union[Text, List[Text]],
@@ -69,7 +77,7 @@ class MBartConditionalGeneratorSummarizer:
         inputs = self.tokenizer(
             inputs,
             padding=True,
-            max_length=self.model.config.max_position_embeddings,
+            max_length=self.max_input_len or self.model.config.max_position_embeddings,
             truncation=True,
             return_tensors="pt"
         )
