@@ -27,15 +27,23 @@ def main():
     parser.add_argument("--block_n_grams", type=int, default=3)
     parser.add_argument("--max_length", type=int, default=150)
     parser.add_argument("--type", default="t5_cond")
+    parser.add_argument("--tokenizer_path", default=None)
     parser.add_argument("--model_path", default="VietAI/vit5-base-vietnews-summarization")
     parser.add_argument("--input_key", default="input")
     parser.add_argument("--output_key", default="output")
     parser.add_argument("--id_key", default="sampleId")
+    parser.add_argument("--noninfluent_sampling", action="store_true", default=False)
     args = parser.parse_args()
 
     data = load_data(args.input_path)
     model_class = resolve_summarizer_class(args.type)
-    summarizer = model_class(args.model_path)
+    summarizer = model_class(args.model_path, args.tokenizer_path)
+
+    kwargs = {}
+    if args.noninfluent_sampling is True:
+        kwargs["with_sampling"] = True
+        from .builtin_generators.common import noninfluent_sampler
+        kwargs["sampler"] = noninfluent_sampler
 
     out_data = []
     batch = []
@@ -43,7 +51,12 @@ def main():
     progress_bar = tqdm(total=len(data), desc="Processing")
     for item in data:
         if len(batch) == batch_size:
-            outputs = summarizer.greedy([_item[args.input_key] for _item in batch], block_n_grams=args.block_n_grams)
+            outputs = summarizer.greedy(
+                [_item[args.input_key] for _item in batch],
+                max_length=args.max_length,
+                block_n_grams=args.block_n_grams,
+                **kwargs
+            )
             for output, _item in zip(outputs, batch):
                 out_data.append({
                     args.id_key: _item[args.id_key],
@@ -53,12 +66,13 @@ def main():
                 progress_bar.update(1)
             batch = []
         batch.append(item)
-    
+
     if len(batch) > 0:
         outputs = summarizer.greedy(
             [_item[args.input_key] for _item in batch],
             block_n_grams=args.block_n_grams,
-            max_length=args.max_length
+            max_length=args.max_length,
+            **kwargs
         )
         for output, _item in zip(outputs, batch):
             out_data.append({
@@ -67,7 +81,7 @@ def main():
                 args.output_key: output
             })
             progress_bar.update(1)
-    
+
     with open(args.output_path, "w") as writer:
         for item in tqdm(out_data, desc="Writing"):
             writer.write(json.dumps(item, ensure_ascii=False) + "\n")

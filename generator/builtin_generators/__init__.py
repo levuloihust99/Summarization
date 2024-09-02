@@ -4,7 +4,7 @@ from .mbart_cond import MBartConditionalGeneratorSummarizer
 
 
 def resolve_summarizer_class(
-    model_type: Literal["t5_cond", "mbart-conditional-generation"]
+    model_type: Literal["t5_cond", "mbart_cond"]
 ):
     if model_type == "t5_cond":
         return T5ConditionalGeneratorSummarizer

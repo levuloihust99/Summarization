@@ -1,7 +1,7 @@
 import torch
 
 from collections import defaultdict
-from typing import Optional, Literal, List
+from typing import Optional, Literal, List, Callable
 from tqdm import tqdm
 
 from ..utils import recursive_apply
@@ -16,6 +16,8 @@ def greedy(
     decoder_input_ids: Optional[torch.Tensor] = None,
     max_length: int = 100,
     block_n_grams: int = -1,
+    with_sampling: bool = False,
+    sampler: Optional[Callable] = None
 ) -> List[List[int]]:
     """Generic greedy logic for any seq2seq or autoregressive model.
     
@@ -27,6 +29,9 @@ def greedy(
         decoder_end_token_id (int): the token that marks end of generation
         max_length (int): maximum generated tokens
         block_n_grams (int): prevent repeated n-grams
+        with_sampling (bool): whether to do sampling
+        topk_min (int): sampling from topk_min to topk_max
+        topk_max (int): sampling from topk_min to topk_max
 
     Return:
         List of generated token ids.
@@ -72,7 +77,10 @@ def greedy(
                 mask_ids = [seq[-1] for seq in trie.get_entities_by_prefix(prefix)]
                 logits[idx, :, mask_ids] = -1e20
 
-        next_ids = torch.argmax(logits, dim=-1) # [bsz, 1]
+        if not with_sampling:
+            next_ids = torch.argmax(logits, dim=-1) # [bsz, 1]
+        else:
+            next_ids = sampler(logits)
         tracker.update(input_ids=next_ids)
         alive_seq = torch.cat([alive_seq, next_ids], dim=1) # [bsz, seq_len]
         # update trie
@@ -105,9 +113,38 @@ def greedy(
         progress_bar.update(1)
         if generated_tokens == max_length:
             break
-    
+
     if batch_indices.size(0) > 0:
         for idx in range(len(batch_indices)):
             outputs[batch_indices[idx]] = alive_seq[idx]
 
     return outputs
+
+
+def noninfluent_sampler(
+    logits: torch.Tensor, topk_min: int = 1, topk_max: int = 3, num_consecutive: int = 2
+):
+    if not hasattr(noninfluent_sampler, "state"):
+        setattr(noninfluent_sampler, "state", {"count": 1})
+    count = noninfluent_sampler.state["count"]
+    noninfluent_sampler.state["count"] += 1
+    if count % (num_consecutive + 1) == 0:
+        next_ids = torch.argmax(logits, dim=-1)
+    else:
+        _, next_probable_ids = torch.topk(logits, k=topk_max, dim=-1)
+        bsz = next_probable_ids.size(0)
+        selected = torch.multinomial(
+            input=torch.tile(
+                torch.tensor(
+                    [0] * (topk_min - 1) + [1] * (topk_max - topk_min + 1),
+                    dtype=torch.float,
+                ),
+                dims=(bsz, 1)
+            ),
+            num_samples=1
+        )  # categorical distribution, [bsz, 1]
+        next_ids = torch.gather(
+            next_probable_ids, dim=-1, index=selected.unsqueeze(-1)
+        )
+        next_ids = next_ids.squeeze(-1)
+    return next_ids

@@ -7,13 +7,16 @@ from .common import greedy
 
 
 class MBartConditionalGeneratorSummarizer:
-    def __init__(self, model_path):
+    def __init__(self, model_path, tokenizer_path=None):
         device = torch.device('cuda') if torch.cuda.is_available() else torch.device("cpu")
         self.device = device
         self.model = MBartForConditionalGeneration.from_pretrained(model_path)
         self.model.to(device)
         self.model.eval()
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        if tokenizer_path:
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+        else:
+            self.tokenizer = AutoTokenizer.from_pretrained(model_path)
     
     def forward(
         self,
@@ -86,6 +89,7 @@ class MBartConditionalGeneratorSummarizer:
             decoder_input_ids=alive_seq,
             max_length=max_length,
             block_n_grams=block_n_grams,
+            **kwargs,
         )
         outputs = [
             self.tokenizer.decode(output, clean_up_tokenization_spaces=False, skip_special_tokens=True)
