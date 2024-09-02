@@ -14,12 +14,13 @@ that maximum size of `data.pkl` is about 2^48 bytes = 64 TiB.
 
 import os
 import pickle
+import logging
 from typing import Text, Any
 
-from torch.utils.data import Dataset
+logger = logging.getLogger(__name__)
 
 
-class ByteDataset(Dataset):
+class ByteDataset:
     def __init__(
         self,
         data_path: Text,
@@ -69,7 +70,9 @@ class ByteDataset(Dataset):
 
     def __del__(self):
         self.idx_file.close()
+        logger.info("Idx file closed ({})".format(self.data_path))
         self.data_file.close()
+        logger.info("Data file closed ({})".format(self.data_path))
 
     def add_item(self, item: Any):
         self.idx_file.seek(0, 2)
