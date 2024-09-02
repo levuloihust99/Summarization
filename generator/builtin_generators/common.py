@@ -122,7 +122,7 @@ def greedy(
 
 
 def noninfluent_sampler(
-    logits: torch.Tensor, topk_min: int = 1, topk_max: int = 3, num_consecutive: int = 2
+    logits: torch.Tensor, topk_min: int = 1, topk_max: int = 3, num_consecutive: int = 3
 ):
     if not hasattr(noninfluent_sampler, "state"):
         setattr(noninfluent_sampler, "state", {"count": 1})

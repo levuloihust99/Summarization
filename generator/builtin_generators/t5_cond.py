@@ -83,12 +83,12 @@ class T5ConditionalGeneratorSummarizer:
         block_n_grams: int = -1,
         **kwargs
     ) -> List[Text]:
-        kwargs = (
+        tokenizer_kwargs = (
             {"truncation": True, "max_length": self.max_input_len}
             if self.max_input_len
             else {}
         )
-        inputs = self.tokenizer(inputs, padding=True, return_tensors="pt", **kwargs)
+        inputs = self.tokenizer(inputs, padding=True, return_tensors="pt", **tokenizer_kwargs)
         batch_size = inputs.input_ids.size(0)
         alive_seq = torch.full(
             [batch_size, 1],
