@@ -2,7 +2,9 @@ import re
 import os
 import json
 import copy
+import wandb
 import string
+import random
 import torch
 import numpy as np
 from transformers import (
@@ -134,6 +136,15 @@ def main():
     hparams = override_defaults(hparams, args_json)
     cfg = Seq2SeqConfig(**hparams)
 
+    run_id = None
+    if cfg.add_run_id:
+        run_id = "".join(
+            random.choice(string.digits + string.ascii_uppercase) for _ in range(16)
+        )
+    if run_id:
+        cfg.output_dir = os.path.join(cfg.output_dir, run_id)
+        cfg.logging_dir = os.path.join(cfg.logging_dir, run_id)
+
     if not os.path.exists(cfg.output_dir):
         os.makedirs(cfg.output_dir)
     with open(os.path.join(cfg.output_dir, "training_config.json"), "w") as writer:
@@ -175,6 +186,15 @@ def main():
         input_name=cfg.input_name,
         output_name=cfg.output_name
     )
+    
+    # wandb setup
+    if "wandb" in cfg.report_to:
+        wandb.login(key=cfg.wandb_api_key)
+        wandb.init(
+            project="Seq2Seq",
+            name=run_id or "Default",
+            config=cfg.to_json()
+        )
 
     # training arguments
     training_args = Seq2SeqTrainingArguments(

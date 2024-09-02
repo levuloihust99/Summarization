@@ -61,6 +61,9 @@ class Seq2SeqConfig:
         # data config
         self.input_transform = None # [json_sequentialize]
         self.output_transform = None # [json_sequentialize]
+        
+        self.add_run_id = False
+        self.wandb_api_key = None
 
         self.override_defaults(**kwargs)
         self.validate_config()
@@ -121,5 +124,7 @@ class Seq2SeqConfig:
             "max_input_len": self.max_input_len,
             "max_output_len": self.max_output_len,
             "input_transform": self.input_transform,
-            "output_transform": self.output_transform
+            "output_transform": self.output_transform,
+            "add_run_id": self.add_run_id,
+            "wandb_api_key": self.wandb_api_key,
         }

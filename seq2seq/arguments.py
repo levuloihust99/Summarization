@@ -61,6 +61,9 @@ def create_parser():
     # data params
     parser.add_argument("--input_transform", choices=["json_sequentialize"])
     parser.add_argument("--output_transform", choices=["json_sequentialize"])
+    
+    parser.add_argument("--add_run_id", action="store_true")
+    parser.add_argument("--wandb_api_key")
 
     parser.add_argument("--hparams", default="{}")
 
