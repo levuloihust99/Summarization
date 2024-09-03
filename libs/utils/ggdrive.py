@@ -318,6 +318,7 @@ def main():
     args = parser.parse_args()
 
     global include_pattern, ignore_pattern, include_over_ignore, client_secrets_file, token_file
+    token_file = args.token_file
     include_pattern = args.include_pattern
     ignore_pattern = args.ignore_pattern
     include_over_ignore = args.include_over_ignore
