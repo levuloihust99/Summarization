@@ -90,7 +90,7 @@ def upload(file_path: str, parent_id: str):
     drive_api_file_endpoint = urljoin(DRIVE_API_BASE_URL, "files")
     iterating_status = ""
 
-    with httpx.Client() as client:
+    with httpx.Client(timeout=60) as client:
         for i, f in enumerate(sequence):
             counter_prefix = counter_prefix_template.format(i + 1, count)
             flush_string = "\r" + " " * len(iterating_status) + "\r"
