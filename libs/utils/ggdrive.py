@@ -1,5 +1,6 @@
 import os
 import re
+import io
 import json
 import httpx
 import argparse
@@ -12,11 +13,17 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaIoBaseDownload
 
 from .file_utils import format_print_path, check_for_ignore
 
 
-SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+SCOPES = [
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/drive.metadata",
+]
 DRIVE_API_BASE_URL = "https://www.googleapis.com/upload/drive/v3/"
 FILE_SIZE_THRESHOLD = 5 * 1024**2
 client_secrets_file = "client_secrets.json"
@@ -33,7 +40,7 @@ def check_for_error(resp: Response):
         raise Exception(resp.content.decode())
 
 
-def upload(file_path: str, parent_id: str):
+def authenticate():
     creds = None
     if os.path.exists(token_file):
         creds = Credentials.from_authorized_user_file(token_file, SCOPES)
@@ -47,6 +54,11 @@ def upload(file_path: str, parent_id: str):
             creds = flow.run_local_server()
             with open(token_file, "w") as writer:
                 writer.write(creds.to_json())
+    return creds
+
+
+def upload(file_path: str, parent_id: str):
+    creds = authenticate()
     authorization_headers = {"Authorization": "Bearer {}".format(creds.token)}
     service = build("drive", "v3", credentials=creds)
 
@@ -173,20 +185,99 @@ def upload(file_path: str, parent_id: str):
                     "parents": [_parent],
                     "mimeType": "application/vnd.google-apps.folder",
                 }
-                uploaded_folder = service.files().create(body=file_metadata, fields="id").execute()
+                uploaded_folder = (
+                    service.files().create(body=file_metadata, fields="id").execute()
+                )
                 id_tracker[f] = uploaded_folder.get("id")
 
         # end loop, print newline
         print()
 
 
+def list_files_in_folder(service, folder_id):
+    files = []
+    page_token = None
+    while True:
+        response = (
+            service.files()
+            .list(
+                q=f"'{folder_id}' in parents",
+                spaces="drive",
+                fields="nextPageToken, files(id, name, mimeType)",
+                pageToken=page_token,
+            )
+            .execute()
+        )
+        files.extend(response.get("files", []))
+        page_token = response.get("nextPageToken", None)
+        if page_token is None:
+            break
+    return files
+
+
+def download_folder(service, folder_id, folder_name, save_path):
+    folder_path = os.path.join(save_path, folder_name)
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+    items = list_files_in_folder(service, folder_id)
+    for item in items:
+        if item["mimeType"] == "application/vnd.google-apps.folder":
+            download_folder(service, item["id"], item["name"], folder_path)
+        else:
+            download_file(service, item["id"], item["name"], folder_path)
+
+
+def download_file(service, file_id, file_name, save_path):
+    request = service.files().get_media(fileId=file_id)
+    file_path = os.path.join(save_path, file_name)
+    print("Downloading to {}...".format(file_path))
+    file = io.FileIO(file_path, "wb")
+    downloader = MediaIoBaseDownload(file, request)
+    done = False
+    progress = ""
+    while done is False:
+        status, done = downloader.next_chunk()
+        flush_string = "\r" + " " * len(progress) + "\r"
+        progress = f"Downloaded {int(status.progress() * 100)}%"
+        print(flush_string + progress, end="")
+    print()
+
+
+def download(file_id: str, download_dir: str):
+    creds = authenticate()
+
+    # create drive api client
+    service = build("drive", "v3", credentials=creds)
+    file_metadata = (
+        service.files().get(fileId=file_id, fields="name,mimeType").execute()
+    )
+
+    if file_metadata["mimeType"] == "application/vnd.google-apps.folder":
+        download_folder(service, file_id, file_metadata["name"], download_dir)
+    else:
+        download_file(service, file_id, file_metadata["name"], download_dir)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "command",
+        choices=["up", "down"],
+        help="What action do you want to perform? Upload or download?",
+    )
+    parser.add_argument(
+        "--file_id",
+        help="Id of the file or folder on Google Drive. Required if `command` is `down`",
+    )
+    parser.add_argument(
+        "--download_dir",
+        default=None,
+        help="Path where the downloaded file will be locate. Default to the current directory.",
+    )
+    parser.add_argument(
         "--file_path",
         "-f",
-        required=True,
-        help="Path to the file or directory that you want to upload.",
+        help="Path to the file or directory that you want to upload. Required if `command` is `up`",
     )
     parser.add_argument(
         "--client_secrets_file",
@@ -231,7 +322,11 @@ def main():
     ignore_pattern = args.ignore_pattern
     include_over_ignore = args.include_over_ignore
 
-    upload(args.file_path, args.parent_id)
+    # list_files_in_folder()
+    if args.command == "up":
+        upload(args.file_path, args.parent_id)
+    else:
+        download(args.file_id, args.download_dir or os.getcwd())
 
 
 if __name__ == "__main__":
