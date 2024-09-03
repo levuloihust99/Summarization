@@ -1,5 +1,6 @@
 import os
 import json
+import random
 import logging
 import argparse
 
@@ -7,8 +8,10 @@ from tqdm import tqdm
 from typing import Text, Dict, List, Any
 
 from .builtin_generators import resolve_summarizer_class
+from .samplers import noninfluent_sampler, top10_30_sampler
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def load_data(data_path: Text) -> List[Dict[Text, Any]]:
@@ -33,7 +36,7 @@ def main():
     parser.add_argument("--input_key", default="input")
     parser.add_argument("--output_key", default="output")
     parser.add_argument("--id_key", default="sampleId")
-    parser.add_argument("--noninfluent_sampling", action="store_true", default=False)
+    parser.add_argument("--sampler", default=None, choices=["top10_30_sampler", "noninfluent_sampler"])
     args = parser.parse_args()
 
     data = load_data(args.input_path)
@@ -41,10 +44,9 @@ def main():
     summarizer = model_class(args.model_path, args.tokenizer_path, args.max_input_len)
 
     kwargs = {}
-    if args.noninfluent_sampling is True:
+    if args.sampler:
         kwargs["with_sampling"] = True
-        from .builtin_generators.common import noninfluent_sampler
-        kwargs["sampler"] = noninfluent_sampler
+        kwargs["sampler"] = eval(args.sampler)
 
     out_data = []
     batch = []
@@ -52,9 +54,15 @@ def main():
     progress_bar = tqdm(total=len(data), desc="Processing")
     for item in data:
         if len(batch) == batch_size:
+            if args.sampler == "top10_30_sampler":
+                range_lower = max(50, args.max_length - 100)
+                range_upper = max(args.max_length, range_lower + 50)
+                selected_max_len = random.randint(range_lower, range_upper)
+                kwargs.update(max_length=selected_max_len)
+            else:
+                kwargs.update(max_length=args.max_length)
             outputs = summarizer.greedy(
                 [_item[args.input_key] for _item in batch],
-                max_length=args.max_length,
                 block_n_grams=args.block_n_grams,
                 **kwargs
             )
@@ -69,10 +77,15 @@ def main():
         batch.append(item)
 
     if len(batch) > 0:
+        logger.info("Last batch...")
+        if args.sampler == "top10_30_sampler":
+            range_lower = max(50, args.max_length - 100)
+            range_upper = max(args.max_length, range_lower + 50)
+            selected_max_len = random.randint(range_lower, range_upper)
+            kwargs.update(max_length=selected_max_len)
         outputs = summarizer.greedy(
             [_item[args.input_key] for _item in batch],
             block_n_grams=args.block_n_grams,
-            max_length=args.max_length,
             **kwargs
         )
         for output, _item in zip(outputs, batch):
