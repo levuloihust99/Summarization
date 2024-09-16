@@ -68,7 +68,7 @@ class T5CrossEncoder(CrossEncoder, T5Stack):
         )
         seq_output = t5stack_outputs.last_hidden_state # [bsz, seq_len, hidden_size]
         score = self.score(seq_output) # [bsz, seq_len, 1]
-        score = torch.squeeze(score, dim=1) # [bsz, seq_len]
+        score = torch.squeeze(score, dim=-1) # [bsz, seq_len]
 
         if input_ids is not None:
             batch_size = input_ids.shape[0]
@@ -91,7 +91,6 @@ class T5CrossEncoder(CrossEncoder, T5Stack):
                 sequence_lengths = -1
 
         pooled_score = score[torch.arange(batch_size, device=score.device), sequence_lengths] # [bsz, 1]
-        pooled_score = torch.squeeze(pooled_score, dim=1)
         return pooled_score
 
 
@@ -103,7 +102,7 @@ class T5CrossEncoderReward(RewardModel):
         saved_state = torch.load(ckpt_path, map_location=lambda s, t: s)
         pretrained = T5ForConditionalGeneration.from_pretrained(pretrained_path)
         cross_enc = T5CrossEncoder.from_t5_for_conditional_generation(pretrained)
-        cross_enc.load_state_dict(saved_state["model_dict"])
+        cross_enc.load_state_dict(saved_state)
         self.cross_enc = cross_enc.eval().to(device_manager.device)
 
     def _cal_reward(self, doc: str, hyp: str, ref: str, *args, **kwargs):
