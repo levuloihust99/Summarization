@@ -134,7 +134,12 @@ def main():
     train_dataset = ByteDataset(data_path=train_data_path)
     # currently, multi-gpu training is disabled
     train_sampler = DistributedSampler(
-        train_dataset, num_replicas=1, rank=0, shuffle=True, seed=cfg.seed
+        train_dataset,
+        num_replicas=1,
+        rank=0,
+        shuffle=True,
+        seed=cfg.seed,
+        drop_last=True,
     )
     train_dataloader = DataLoader(
         train_dataset,
@@ -200,7 +205,7 @@ def main():
         reward_model=reward_model,
         training_state=training_state,
         rng_state=checkpoint_state.rng_state if checkpoint_state else None,
-        run_id=run_id
+        run_id=run_id,
     )
     trainer.train()
 
