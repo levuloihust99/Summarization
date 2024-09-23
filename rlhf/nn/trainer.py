@@ -205,8 +205,9 @@ class RLHFTrainer:
                 actual_bsz = len(filtered_query_tensors)
 
                 # PPO step
+                train_stats = self.ppo_trainer.step(filtered_query_tensors, response_tensors, rewards)
+
                 if (global_step + 1) % self.config.logging_steps == 0:
-                    train_stats = self.ppo_trainer.step(filtered_query_tensors, response_tensors, rewards)
                     batch_to_log = {
                         "epoch": [epoch] * actual_bsz,
                         "step": [step] * actual_bsz,
@@ -241,6 +242,7 @@ class RLHFTrainer:
                             eval_mode=self.config.eval_mode,
                             reward_model=self.reward_model,
                         )
+                        logger.warning(eval_stats)
                         self.ppo_trainer.accelerator.log(eval_stats, step=global_step + 1)
 
                     if self.ppo_trainer.accelerator.is_main_process:
