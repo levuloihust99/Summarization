@@ -7,7 +7,7 @@ import warnings
 
 from tqdm import tqdm
 from typing import Optional, Dict, List, Text, Iterable
-from trl import PPOTrainer
+from trl import PPOTrainer, create_reference_model
 from torch.utils.data import DataLoader
 from accelerate.utils import gather_object
 
@@ -252,6 +252,10 @@ class RLHFTrainer:
                             if not self.config.greater_is_better:
                                 metric = -metric
                             if metric > best_metric:
+                                if best_metric != float("-inf"):
+                                    # update the reference SFT model
+                                    logger.warning("Update reference SFT model")
+                                    self.ppo_trainer.ref_model = create_reference_model(self.ppo_trainer.model)
                                 best_metric = metric
                                 best_checkpoint = cp_name
                                 logger.info("New best checkpoint: {}".format(cp_name))
