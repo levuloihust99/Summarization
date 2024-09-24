@@ -157,6 +157,7 @@ class RLHFTrainer:
                 set_rng_state(self.rng_state)
 
             for i, batch in enumerate(data_iterator):
+                global_step += 1
                 step = i + data_step
                 query_tensors = batch["input_ids"]
                 query_tensors = [q.to(device_manager.device) for q in query_tensors]
@@ -205,29 +206,32 @@ class RLHFTrainer:
                 actual_bsz = len(filtered_query_tensors)
 
                 # PPO step
-                train_stats = self.ppo_trainer.step(filtered_query_tensors, response_tensors, rewards)
+                try:
+                    train_stats = self.ppo_trainer.step(filtered_query_tensors, response_tensors, rewards)
+                except Exception as exc:
+                    logger.error("Encounter error", exc_info=True)
+                else:
+                    if global_step % self.config.logging_steps == 0:
+                        batch_to_log = {
+                            "epoch": [epoch] * actual_bsz,
+                            "step": [step] * actual_bsz,
+                            "global_step": [global_step - 1] * actual_bsz,
+                            "document": batch[self.config.input_name],
+                            "reference": batch[self.config.output_name],
+                            "hypothesis": response_texts,
+                            "reward": rewards
+                        }
+                        self.log_stats(train_stats)
+                        self.log_batch(batch_to_log)
+                        self.trl_log_stats(
+                            current_step=global_step,
+                            stats=train_stats,
+                            batch=batch_to_log,
+                            rewards=rewards,
+                            columns_to_log=list(batch_to_log.keys()),
+                        )
 
-                if (global_step + 1) % self.config.logging_steps == 0:
-                    batch_to_log = {
-                        "epoch": [epoch] * actual_bsz,
-                        "step": [step] * actual_bsz,
-                        "global_step": [global_step] * actual_bsz,
-                        "document": batch[self.config.input_name],
-                        "reference": batch[self.config.output_name],
-                        "hypothesis": response_texts,
-                        "reward": rewards
-                    }
-                    self.log_stats(train_stats)
-                    self.log_batch(batch_to_log)
-                    self.trl_log_stats(
-                        current_step=global_step + 1,
-                        stats=train_stats,
-                        batch=batch_to_log,
-                        rewards=rewards,
-                        columns_to_log=list(batch_to_log.keys()),
-                    )
-
-                if (global_step + 1) % self.config.save_steps == 0:
+                if global_step % self.config.save_steps == 0:
                     # evaluation
                     if self.config.do_eval:
                         eval_stats = evaluate_generator(
@@ -243,10 +247,10 @@ class RLHFTrainer:
                             reward_model=self.reward_model,
                         )
                         logger.warning(eval_stats)
-                        self.ppo_trainer.accelerator.log(eval_stats, step=global_step + 1)
+                        self.ppo_trainer.accelerator.log(eval_stats, step=global_step)
 
                     if self.ppo_trainer.accelerator.is_main_process:
-                        cp_name = f"checkpoint-{global_step + 1}"
+                        cp_name = f"checkpoint-{global_step}"
                         cp_path = os.path.join(self.config.model_save_path, self.run_id, cp_name)
 
                         if self.config.do_eval:
@@ -264,7 +268,7 @@ class RLHFTrainer:
 
                         training_state = {
                             "epoch": epoch,
-                            "global_step": global_step + 1,
+                            "global_step": global_step,
                             "data_step": step + 1,
                             "best_checkpoint": best_checkpoint,
                             "best_metric": best_metric * int(self.config.greater_is_better)
@@ -277,7 +281,6 @@ class RLHFTrainer:
 
                         self.save_checkpoint(cp_path, training_state)
 
-                global_step += 1
                 progress_bar.update(1)
 
             data_step = 0
