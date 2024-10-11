@@ -105,6 +105,7 @@ def main():
                 block_n_grams=args.block_n_grams,
                 **kwargs
             )
+            done_batch = []
             for output, _item in zip(outputs, batch):
                 out_data.append({
                     args.id_key: _item[args.id_key],
@@ -112,6 +113,11 @@ def main():
                     args.output_key: output
                 })
                 progress_bar.update(1)
+            out_data.extend(done_batch)
+            for done_item in done_batch:
+                writer.write(json.dumps(done_item, ensure_ascii=False) + "\n")
+                writer.flush()
+            batch = []
 
 
 if __name__ == "__main__":
