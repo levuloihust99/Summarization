@@ -107,7 +107,7 @@ def main():
             )
             done_batch = []
             for output, _item in zip(outputs, batch):
-                out_data.append({
+                done_batch.append({
                     args.id_key: _item[args.id_key],
                     args.input_key: _item[args.input_key],
                     args.output_key: output
